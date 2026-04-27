@@ -1,0 +1,16 @@
+(
+    id: "phase52_default_validation",
+    display_name: "Phase 52 Default Validation Profile",
+    checks: [
+        (id:"biome_ids_unique", severity:"error", target:"biome_catalog", enabled:true, description:"Every biome id must be unique.", help_entry_id:"field.biome.temperature_band"),
+        (id:"biome_default_material_refs", severity:"error", target:"biome_catalog", enabled:true, description:"Biome default grass/sand/water ids must resolve to known materials/liquids.", help_entry_id:"field.material.family"),
+        (id:"material_family_transition_coverage", severity:"warning", target:"material_catalog", enabled:true, description:"Important material families should have transition coverage.", help_entry_id:"field.material.family"),
+        (id:"liquid_physics_bounds", severity:"error", target:"liquid_catalog", enabled:true, description:"Liquid flow, density, viscosity, and depth values must be positive and within expected ranges.", help_entry_id:"field.liquid.flow_rate"),
+        (id:"weather_accumulation_layer_exists", severity:"error", target:"weather_catalog", enabled:true, description:"Weather events must write to a known accumulation or none layer.", help_entry_id:"field.weather.snow_depth_per_hour"),
+        (id:"layer_order_unique", severity:"error", target:"map_layer_schema", enabled:true, description:"Layer ids and render orders must not conflict.", help_entry_id:"field.layer.editable"),
+        (id:"derived_layers_locked", severity:"error", target:"map_layer_schema", enabled:true, description:"Derived simulation layers should not be directly editable or saved as authored map data.", help_entry_id:"field.layer.editable"),
+        (id:"vox_bake_profile_exists", severity:"error", target:"vox_asset_catalog", enabled:true, description:"Every .vox asset must reference an existing bake profile.", help_entry_id:"field.vox.bake_profile"),
+        (id:"worldgen_pass_order_unique", severity:"warning", target:"worldgen_presets", enabled:true, description:"Worldgen passes should have stable unique order values.", help_entry_id:"field.worldgen.pass_kind"),
+        (id:"help_entries_resolve_wiki_paths", severity:"warning", target:"editor_help_catalog", enabled:true, description:"Every help entry should point to an existing wiki markdown page.", help_entry_id:"field.camera.rotation_mode"),
+    ],
+)

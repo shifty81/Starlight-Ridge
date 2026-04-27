@@ -1,0 +1,26 @@
+(
+    version: 1,
+    materials: [
+        (
+            id: "grass_lush",
+            family: "grass",
+            display_name: "Lush Grass",
+            physics_profile: "soft_ground",
+            season_variants: (
+                spring: "grass_lush_spring",
+                summer: "grass_lush_summer",
+                fall: "grass_lush_fall",
+                winter: "grass_lush_winter",
+            ),
+            wet_variant: Some("grass_lush_wet"),
+            dry_variant: Some("grass_lush_dry"),
+            transition_profile: "grass_soft_edges",
+            atlas_role: "terrain_grass_lush",
+            absorbs_water: true,
+            puddle_capacity: 0.20,
+            snow_retention: 0.65,
+            editor_thumbnail: "atlas://terrain/grass_lush_summer/base",
+            help_doc_id: "wiki.materials.materials",
+        ),
+    ],
+)

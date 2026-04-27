@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Starlight Ridge Web Editor</title>
+  <meta name="theme-color" content="#08101c" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="stylesheet" href="/web/app.css" />
+</head>
+<body>
+  <section id="entranceLauncher" class="entranceLauncher" hidden aria-label="Choose web editor view">
+    <div class="launcherCard">
+      <div class="launcherHeader">
+        <p class="eyebrow">Starlight Ridge Web Editor</p>
+        <h1>Choose your editor view</h1>
+        <p>Select the layout that fits this device, or close this panel and let the editor adapt automatically.</p>
+      </div>
+      <div class="launcherChoices">
+        <button type="button" data-launch-mode="pc">
+          <strong>Desktop / full editor</strong>
+          <span>Three-panel workspace for mouse, keyboard, and wide monitors.</span>
+        </button>
+        <button type="button" data-launch-mode="tablet">
+          <strong>Tablet / balanced</strong>
+          <span>Touch-friendly controls with a larger map area.</span>
+        </button>
+        <button type="button" data-launch-mode="mobile">
+          <strong>Mobile / map-first</strong>
+          <span>Prioritizes the canvas, quick actions, and compact panels.</span>
+        </button>
+      </div>
+      <label class="launcherRemember">
+        <input id="rememberLauncherChoice" type="checkbox" checked />
+        <span>Remember this view on this device</span>
+      </label>
+      <button id="launcherSkipButton" type="button" class="launcherSkip">Continue with automatic layout</button>
+    </div>
+  </section>
+  <header class="topbar">
+    <div>
+      <h1>Starlight Ridge Web Editor</h1>
+      <p id="serverStatus">Connecting…</p>
+    </div>
+    <div class="topbarActions">
+      <div class="modeSwitch" aria-label="Presentation mode">
+        <button id="pcModeButton" type="button" class="active">PC Mode</button>
+        <button id="tabletModeButton" type="button">Tablet Mode</button>
+        <button id="mobileModeButton" type="button">Mobile Mode</button>
+      </div>
+      <button id="viewLauncherButton" type="button">View</button>
+      <button id="reloadButton" type="button">Reload</button>
+      <button id="exportButton" type="button">Export layers.ron</button>
+      <button id="saveButton" type="button" disabled>Save to repo</button>
+    </div>
+  </header>
+
+  <nav class="workspaceTabs" aria-label="Web editor workspace tabs">
+    <button type="button" class="active" data-workspace="world">World</button>
+    <button type="button" data-workspace="assets">Assets</button>
+    <button type="button" data-workspace="logic">Logic</button>
+    <button type="button" data-workspace="data">Data</button>
+    <button type="button" data-workspace="settings">Settings</button>
+  </nav>
+
+  <main class="layout">
+    <aside class="panel controls">
+      <label class="field">
+        <span>Map</span>
+        <select id="mapSelect"></select>
+      </label>
+
+      <label class="field">
+        <span>Paint layer</span>
+        <select id="paintLayerSelect"></select>
+      </label>
+
+      <label class="field">
+        <span>Zoom</span>
+        <input id="zoomSlider" type="range" min="0.5" max="6" step="0.25" value="2" />
+      </label>
+
+      <section class="toolShell">
+        <h2>Tools</h2>
+        <div class="toolRail" aria-label="Editor tools">
+          <button id="paintButton" type="button" data-tool="paint" title="Paint (1 or P)">Pencil</button>
+          <button id="eraseButton" type="button" data-tool="erase" title="Erase (2 or E)">Erase</button>
+          <button id="fillButton" type="button" data-tool="fill" title="Fill (3 or F)">Fill</button>
+          <button id="eyedropButton" type="button" data-tool="eyedrop" title="Eyedropper (4 or I)">Pick</button>
+          <button id="inspectButton" type="button" data-tool="inspect" title="Inspect (5, Q, or Esc)">Inspect</button>
+          <button id="brushDrawerToggle" type="button" title="Open/collapse brush drawer (B)">Brushes</button>
+        </div>
+
+        <div id="brushDrawer" class="brushDrawer" aria-label="Brush drawer">
+          <h2>Brush Drawer</h2>
+          <div class="brushGrid">
+            <button type="button" data-brush="pencil">1px</button>
+            <button type="button" data-brush="square">Square</button>
+            <button type="button" data-brush="circle">Circle</button>
+            <button type="button" data-brush="dither">Dither</button>
+            <button type="button" data-brush="line">Line</button>
+            <button type="button" data-brush="stamp">Stamp</button>
+          </div>
+          <label class="field compactField">
+            <span>Brush size <b id="brushSizeValue">1</b></span>
+            <input id="brushSizeInput" type="range" min="1" max="9" step="1" value="1" />
+          </label>
+          <label class="checkline">
+            <input id="ditherToggle" type="checkbox" />
+            <span>Dither spacing</span>
+          </label>
+        </div>
+      </section>
+
+      <section class="copyPastePanel">
+        <h2>Copy / Paste Transform</h2>
+        <label class="field compactField">
+          <span>Copy scope</span>
+          <select id="copyScopeSelect">
+            <option value="tile">Current Tile</option>
+            <option value="viewport">Visible Viewport</option>
+            <option value="layer">Entire Layer</option>
+          </select>
+        </label>
+        <label class="field compactField">
+          <span>Paste transform</span>
+          <select id="pasteTransformSelect">
+            <option value="normal">Normal</option>
+            <option value="mirror_h">Mirror H</option>
+            <option value="mirror_v">Mirror V</option>
+            <option value="mirror_both">Mirror H+V</option>
+            <option value="rotate_90">Rotate 90°</option>
+            <option value="rotate_180">Rotate 180°</option>
+            <option value="rotate_270">Rotate 270°</option>
+          </select>
+        </label>
+        <div class="quickGrid">
+          <button id="copyButton" type="button" title="Copy (C or Ctrl+C)">Copy</button>
+          <button id="pasteButton" type="button" title="Paste (V or Ctrl+V)">Paste</button>
+          <button id="mirrorHButton" type="button" title="Mirror pasted content horizontally (H)">Mirror H</button>
+          <button id="mirrorVButton" type="button" title="Mirror pasted content vertically (J)">Mirror V</button>
+          <button id="rotateButton" type="button" title="Cycle paste rotation (R)">Rotate</button>
+        </div>
+      </section>
+
+      <label class="checkline">
+        <input id="gridToggle" type="checkbox" checked />
+        <span>Show tile grid <kbd>G</kbd></span>
+      </label>
+
+      <label class="checkline">
+        <input id="paintToggle" type="checkbox" />
+        <span>Paint on drag/tap</span>
+      </label>
+
+      <section>
+        <h2>Layers</h2>
+        <div id="layerList" class="list"></div>
+      </section>
+
+      <section>
+        <h2>Palette</h2>
+        <div id="palette" class="palette"></div>
+      </section>
+
+      <section>
+        <h2>Inspector</h2>
+        <pre id="inspector" class="inspector">No tile selected.</pre>
+      </section>
+
+      <section class="keyboardHelp">
+        <h2>Keybinds</h2>
+        <p><kbd>1/P</kbd> Paint · <kbd>2/E</kbd> Erase · <kbd>3/F</kbd> Fill · <kbd>4/I</kbd> Pick · <kbd>5/Q/Esc</kbd> Inspect</p>
+        <p><kbd>B</kbd> Brushes · <kbd>C</kbd> Copy · <kbd>V</kbd> Paste · <kbd>H</kbd> Mirror H · <kbd>J</kbd> Mirror V · <kbd>R</kbd> Rotate · <kbd>[</kbd>/<kbd>]</kbd> Zoom</p>
+        <p><kbd>Ctrl+S</kbd> Save · <kbd>Ctrl+E</kbd> Export · <kbd>Ctrl+R</kbd> Reload</p>
+      </section>
+
+      <section class="tabletQuickActions">
+        <h2>Tablet Quick Actions</h2>
+        <div class="quickGrid">
+          <button id="tabletPaintButton" type="button">Paint</button>
+          <button id="tabletInspectButton" type="button">Inspect</button>
+          <button id="tabletEraseButton" type="button">Erase</button>
+          <button id="tabletEyedropButton" type="button">Pick</button>
+        </div>
+      </section>
+    </aside>
+
+    <section class="stageWrap">
+      <div id="canvasScroller" class="canvasScroller">
+        <canvas id="mapCanvas" width="1280" height="896"></canvas>
+      </div>
+    </section>
+
+    <aside class="panel rawPanel">
+      <section>
+        <h2>Map files</h2>
+        <div id="fileTabs" class="tabs"></div>
+        <textarea id="rawText" spellcheck="false"></textarea>
+      </section>
+      <section class="notes">
+        <h2>LAN use</h2>
+        <p id="lanHint">Open this same URL from your tablet while both devices are on the same network.</p>
+        <p>If the tablet cannot connect, allow the server port through Windows Firewall.</p>
+        <p>Saving is disabled unless the server is launched with <code>STARLIGHT_WEB_ALLOW_WRITE=1</code>.</p>
+      </section>
+    </aside>
+  </main>
+
+
+  <section id="mobileCommandBar" class="mobileCommandBar" aria-label="Mobile editor actions">
+    <button id="mobilePaintButton" type="button" data-mobile-tool="paint">Paint</button>
+    <button id="mobileEraseButton" type="button" data-mobile-tool="erase">Erase</button>
+    <button id="mobileFillButton" type="button" data-mobile-tool="fill">Fill</button>
+    <button id="mobilePickButton" type="button" data-mobile-tool="eyedrop">Pick</button>
+    <button id="mobileToolsButton" type="button">Tools</button>
+    <button id="mobileSaveButton" type="button" disabled>Save</button>
+  </section>
+
+  <section id="mobileToolSheet" class="mobileToolSheet" aria-label="Mobile editor drawer" hidden>
+    <div class="mobileSheetHandle"></div>
+    <div class="mobileSheetHeader">
+      <div>
+        <strong>Mobile tools</strong>
+        <span id="mobileToolSummary">Paint mode</span>
+      </div>
+      <button id="mobileCloseToolsButton" type="button">Close</button>
+    </div>
+
+    <div class="mobileSheetGrid">
+      <label class="field">
+        <span>Map</span>
+        <select id="mobileMapSelect"></select>
+      </label>
+      <label class="field">
+        <span>Layer</span>
+        <select id="mobileLayerSelect"></select>
+      </label>
+      <div class="mobileZoomControls">
+        <button id="mobileZoomOutButton" type="button">−</button>
+        <span id="mobileZoomValue">2×</span>
+        <button id="mobileZoomInButton" type="button">+</button>
+      </div>
+      <button id="mobileGridButton" type="button">Grid</button>
+    </div>
+
+    <h2>Quick palette</h2>
+    <div id="mobilePaletteStrip" class="mobilePaletteStrip"></div>
+
+    <h2>Layer visibility</h2>
+    <div id="mobileLayerStrip" class="mobileLayerStrip"></div>
+
+    <p class="mobileHint">One finger paints or inspects with the selected tool. Pinch to zoom. Two fingers pan the map.</p>
+  </section>
+
+  <script src="/web/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+(
+    id: "pixel_editor_workflow_phase43",
+    display_name: "Phase 43 Pixel Editor Brush Drawer Workflow",
+    purpose: "Shared pixel-editor core UX contract for tile, atlas, prop, character, and animation-frame editing.",
+    layout_contract: (
+        left_region: "fixed-width control region",
+        primary_rail: ["Select", "Pencil", "Erase", "Fill", "Pick", "Stamp"],
+        drawer_behavior: "Click a drawer-capable tool once to open its vertical options drawer; click it again to collapse.",
+        color_panel_behavior: "Color / RGBA and Display options remain in the left control region and shift inside that region when the drawer opens.",
+        canvas_behavior: "The central pixel viewport stays visually stable. Zoom and display toggles affect pixels inside the viewport, not the viewport placement.",
+    ),
+    tools: [
+        (
+            id: "select",
+            drawer_options: ["rect_select", "move_selection", "alpha_lock"],
+        ),
+        (
+            id: "pencil",
+            drawer_options: ["1px_pencil", "square_brush", "circle_brush", "line", "dither", "replace_color", "size", "opacity", "mirror_x", "mirror_y", "alpha_lock"],
+        ),
+        (
+            id: "erase",
+            drawer_options: ["1px_eraser", "square_eraser", "erase_matching_color", "size", "strength"],
+        ),
+        (
+            id: "fill",
+            drawer_options: ["contiguous_fill", "replace_all_matching", "dither_fill", "respect_alpha"],
+        ),
+        (
+            id: "picker",
+            drawer_options: ["pick_alpha_too"],
+        ),
+        (
+            id: "stamp",
+            drawer_options: ["stamp_brush", "pattern_stamp", "mirror_stamp_x", "mirror_stamp_y"],
+        ),
+    ],
+    display_options: ["pixel_grid", "checkerboard", "tile_bounds", "center_guides", "zoom_fit", "zoom_100", "zoom_200", "zoom_400"],
+    phase_44_handoff: (
+        target: "Character Studio mannequin + paperdoll overlay scaffold",
+        reuse_pixel_editor_core: true,
+        expected_tabs: ["Mannequin", "Paperdoll Layers", "Equipment / Overlays", "Animation Preview", "Scale Validator", "Export / Metadata"],
+    ),
+)

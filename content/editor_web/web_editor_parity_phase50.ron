@@ -1,0 +1,38 @@
+(
+    id: "web_editor_parity_phase50",
+    description: "Shared web/egui editor workflow target for brush drawer, keybinds, and clipboard transforms.",
+    presentation_modes: ["pc", "tablet"],
+    workspaces: ["world", "assets", "logic", "data", "settings"],
+    tools: [
+        (id: "paint", keybinds: ["1", "P"], description: "Paint selected symbol onto selected layer."),
+        (id: "erase", keybinds: ["2", "E"], description: "Erase selected layer cells to empty."),
+        (id: "fill", keybinds: ["3", "F"], description: "Flood fill a contiguous region on selected layer."),
+        (id: "eyedrop", keybinds: ["4", "I"], description: "Pick symbol from selected layer."),
+        (id: "inspect", keybinds: ["5", "Q", "Escape"], description: "Inspect tile and layers without editing."),
+    ],
+    brushes: ["pencil", "square", "circle", "dither", "line_scaffold", "stamp_scaffold"],
+    clipboard: (
+        scopes: ["current_tile", "visible_viewport", "entire_layer"],
+        transforms: ["normal", "mirror_h", "mirror_v", "mirror_both", "rotate_90", "rotate_180", "rotate_270"],
+        preview: "Draws a ghost rectangle over the paste destination.",
+    ),
+    keybinds: [
+        (keys: ["Ctrl+S"], action: "save_layers"),
+        (keys: ["Ctrl+E"], action: "export_layers"),
+        (keys: ["Ctrl+R"], action: "reload_map"),
+        (keys: ["Ctrl+C", "C"], action: "copy_internal_editor_clipboard"),
+        (keys: ["Ctrl+V", "V"], action: "paste_internal_editor_clipboard"),
+        (keys: ["B"], action: "toggle_brush_drawer"),
+        (keys: ["G"], action: "toggle_grid"),
+        (keys: ["H"], action: "set_paste_transform_mirror_h"),
+        (keys: ["J"], action: "set_paste_transform_mirror_v"),
+        (keys: ["R"], action: "cycle_paste_rotation"),
+        (keys: ["[", "-"], action: "zoom_out"),
+        (keys: ["]", "+"], action: "zoom_in"),
+    ],
+    parity_notes: [
+        "The web companion now mirrors the native egui brush drawer/keybind vocabulary instead of staying as an older map-only UI.",
+        "Canvas editing remains map-layer based in the web companion; pixel-level PNG mutation remains native egui-first until the shared pixel buffer is implemented.",
+        "Tablet mode keeps larger buttons and hides raw file editing while retaining quick tool actions.",
+    ],
+)

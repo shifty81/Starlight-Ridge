@@ -1,0 +1,45 @@
+(
+    version: "phase48",
+    templates: [
+        (
+            id: "starter_farm_coastal_peninsula_v1",
+            display_name: "Starter Farm Coastal Peninsula",
+            kind: "StarterFarm",
+            default_width: 96,
+            default_height: 96,
+            required_zones: [
+                (id: "player_house", semantic: "BuildingZone", min_width: 8, min_height: 8, notes: "Protected authored location."),
+                (id: "north_exit_to_town", semantic: "ExitZone", min_width: 5, min_height: 1, notes: "Connects farm to town."),
+                (id: "farmable_clearing", semantic: "FarmableSoil", min_width: 24, min_height: 18, notes: "Central playable starter crop space."),
+            ],
+            optional_zones: [
+                (id: "southern_beach", semantic: "Sand", min_width: 32, min_height: 8, notes: "Coastal lower edge."),
+                (id: "tree_cluster", semantic: "TreeSpawn", min_width: 8, min_height: 8, notes: "Natural cleanup targets."),
+                (id: "stone_cluster", semantic: "Rock", min_width: 5, min_height: 5, notes: "Natural cleanup targets."),
+            ],
+            protected_layers: (
+                regeneratable: ["base_terrain", "terrain_variation", "natural_objects", "water_shape"],
+                protected: ["buildings", "npc_spawns", "quest_triggers", "doors", "scene_exits", "logic_bindings", "custom_objects"],
+            ),
+        ),
+        (
+            id: "large_wooded_plot_v1",
+            display_name: "Large Wooded Future Plot",
+            kind: "FarmPlot",
+            default_width: 128,
+            default_height: 112,
+            required_zones: [
+                (id: "plot_entry", semantic: "ExitZone", min_width: 4, min_height: 1, notes: "Connects to adjacent purchased land."),
+                (id: "buildable_core", semantic: "FarmableSoil", min_width: 32, min_height: 24, notes: "Large future build/farm area."),
+            ],
+            optional_zones: [
+                (id: "dense_woods", semantic: "TreeSpawn", min_width: 24, min_height: 24, notes: "High density cleanup zone."),
+                (id: "rocky_corner", semantic: "Rock", min_width: 12, min_height: 12, notes: "Mining/clearing pressure."),
+            ],
+            protected_layers: (
+                regeneratable: ["base_terrain", "terrain_variation", "natural_objects"],
+                protected: ["land_purchase_marker", "scene_exits", "logic_bindings", "custom_objects"],
+            ),
+        ),
+    ],
+)

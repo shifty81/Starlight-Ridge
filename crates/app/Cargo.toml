@@ -1,0 +1,32 @@
+[package]
+name = "app"
+default-run = "app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+env_logger.workspace = true
+log.workspace = true
+glam.workspace = true
+winit.workspace = true
+engine_window = { path = "../engine_window" }
+engine_input = { path = "../engine_input" }
+engine_time = { path = "../engine_time" }
+engine_math = { path = "../engine_math" }
+engine_render_gl = { path = "../engine_render_gl" }
+engine_assets = { path = "../engine_assets" }
+engine_audio = { path = "../engine_audio" }
+engine_debug = { path = "../engine_debug" }
+game_core = { path = "../game_core" }
+game_world = { path = "../game_world" }
+game_data = { path = "../game_data" }
+game_ui = { path = "../game_ui" }
+editor_core = { path = "../editor_core" }
+
+# Phase 36: editor.exe UI is now built with egui/eframe instead of the custom GL overlay.
+eframe = "0.34.1"
+
+image.workspace = true

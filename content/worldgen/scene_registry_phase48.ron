@@ -1,0 +1,32 @@
+(
+    version: "phase48",
+    scenes: [
+        (
+            id: "starter_farm",
+            display_name: "Starter Farm",
+            kind: "StarterFarm",
+            template_id: "starter_farm_coastal_peninsula_v1",
+            default_seed: 1777212650,
+            editable_after_generation: true,
+            bake_target: "content/maps/starter_farm",
+        ),
+        (
+            id: "west_plot",
+            display_name: "West Plot",
+            kind: "FarmPlot",
+            template_id: "large_wooded_plot_v1",
+            default_seed: 1777212651,
+            editable_after_generation: true,
+            bake_target: "content/maps/west_plot",
+        ),
+        (
+            id: "south_plot",
+            display_name: "South Plot",
+            kind: "CoastalFarm",
+            template_id: "small_south_plot_v1",
+            default_seed: 1777212652,
+            editable_after_generation: true,
+            bake_target: "content/maps/south_plot",
+        ),
+    ],
+)

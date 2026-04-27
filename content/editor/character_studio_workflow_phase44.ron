@@ -1,0 +1,42 @@
+(
+    version: "phase44",
+    workspace: "Character",
+    subtabs: [
+        "Mannequin",
+        "Paperdoll Layers",
+        "Equipment / Overlays",
+        "Animation Preview",
+        "Scale Validator",
+        "Export / Metadata",
+    ],
+    layout: (
+        left_panel: [
+            "scale selector",
+            "preview layer toggles",
+            "shared pixel editor tools",
+            "brush drawer",
+            "RGBA / display controls",
+        ],
+        center_panel: [
+            "static mannequin viewport",
+            "block-height guide grid",
+            "bottom-center foot anchor marker",
+            "separate collision box overlay",
+            "paperdoll overlay preview",
+        ],
+        right_panel_future: [
+            "selected layer properties",
+            "slot offsets",
+            "frame metadata",
+            "anchor/socket editor",
+            "export validation",
+        ],
+    ),
+    workflow_notes: [
+        "Character Studio uses the shared pixel editor core instead of a separate paint system.",
+        "The mannequin viewport remains static while the left tool drawer expands and collapses.",
+        "Adults target 2 blocks tall, teens target 1.5 blocks, and small children target 1 block.",
+        "Sprite draw height is not collision height; runtime sorting should use feet Y.",
+        "Equipment is authored as overlays, not baked into base mannequin art.",
+    ],
+)

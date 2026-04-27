@@ -1,0 +1,7 @@
+(
+    id: "shopkeeper_daily",
+    entries: [
+        (time: "08:00", action: "open_shop", target: "town/shop_counter"),
+        (time: "18:00", action: "go_home", target: "town/house_01"),
+    ],
+)

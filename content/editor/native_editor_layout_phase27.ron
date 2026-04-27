@@ -1,0 +1,33 @@
+(
+    version: "phase27",
+    primary_editor: "native_rust_editor",
+    web_asset_lab_status: "prototype_fallback_only",
+    center: (
+        id: "game_viewport",
+        title: "Game Viewport",
+        purpose: "Live render/playtest surface. Asset and map edits should preview here without rebuilding.",
+    ),
+    docks: [
+        (id: "project_browser", title: "Project", region: "left", default_open: true),
+        (id: "asset_browser", title: "Assets", region: "left", default_open: true),
+        (id: "maps", title: "Maps", region: "left", default_open: false),
+        (id: "inspector", title: "Inspector", region: "right", default_open: true),
+        (id: "tile_properties", title: "Tile Properties", region: "right", default_open: true),
+        (id: "character_layers", title: "Character Layers", region: "right", default_open: false),
+        (id: "console", title: "Console", region: "bottom", default_open: true),
+        (id: "validation", title: "Validation", region: "bottom", default_open: true),
+        (id: "timeline", title: "Animation Timeline", region: "bottom", default_open: false),
+    ],
+    toolbar: [
+        (id: "select", icon: "select", tooltip: "Select (V)", shortcut: "V"),
+        (id: "brush", icon: "brush", tooltip: "Brush (B)", shortcut: "B"),
+        (id: "eraser", icon: "eraser", tooltip: "Eraser (E)", shortcut: "E"),
+        (id: "fill", icon: "fill", tooltip: "Fill (G)", shortcut: "G"),
+        (id: "eyedropper", icon: "eyedropper", tooltip: "Eyedropper (I)", shortcut: "I"),
+        (id: "marquee", icon: "marquee", tooltip: "Marquee Select (M)", shortcut: "M"),
+        (id: "move", icon: "move", tooltip: "Move Selection (Ctrl+Drag)", shortcut: "Ctrl+Drag"),
+        (id: "seam", icon: "seam", tooltip: "Seam Check", shortcut: "S"),
+        (id: "animation", icon: "animation", tooltip: "Animation Studio", shortcut: "A"),
+        (id: "character", icon: "character", tooltip: "Character Studio", shortcut: "C"),
+    ],
+)

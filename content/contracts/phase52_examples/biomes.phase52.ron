@@ -1,0 +1,25 @@
+(
+    version: 1,
+    biomes: [
+        (
+            id: "coastal_forest",
+            display_name: "Coastal Forest",
+            description: "Wooded coastal biome used around starter peninsula and beach edges.",
+            temperature_range: (min: 0.35, max: 0.75),
+            moisture_range: (min: 0.45, max: 0.90),
+            elevation_range: (min: 0.05, max: 0.55),
+            salinity_range: (min: 0.10, max: 0.80),
+            primary_materials: ["grass_lush", "sand_pale_beach", "sand_wet_shoreline"],
+            allowed_liquids: ["water_coastal_salt", "water_clear_fresh"],
+            spawn_tables: ["coastal_forest_props", "coastal_wildlife"],
+            weather_profile: "temperate_coastal_weather",
+            season_profile: "temperate_four_season",
+            adjacency_rules: (
+                preferred: ["temperate_woodland", "meadow_plains", "marsh"],
+                allowed: ["cultivated_farmland", "taiga_pine"],
+                discouraged: ["desert_dune", "volcanic_ashlands"],
+            ),
+            help_doc_id: "wiki.worldgen.biomes",
+        ),
+    ],
+)

@@ -1,0 +1,21 @@
+[package]
+name = "engine_render_gl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+log.workspace = true
+winit.workspace = true
+glam.workspace = true
+glow.workspace = true
+glutin.workspace = true
+image.workspace = true
+raw-window-handle.workspace = true
+engine_window = { path = "../engine_window" }
+engine_math = { path = "../engine_math" }
+game_data = { path = "../game_data" }
+game_world = { path = "../game_world" }
+shared_types = { path = "../shared_types" }

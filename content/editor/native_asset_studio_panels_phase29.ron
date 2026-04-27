@@ -1,0 +1,41 @@
+(
+    phase: 29,
+    title: "Native Asset Studio Panels",
+    active_workspace: "AssetStudio",
+    main_view: "game_viewport",
+    left_dock: [
+        "Project Browser",
+        "Asset Browser",
+        "Workflow"
+    ],
+    right_dock: [
+        "Inspector",
+        "Selected Tile",
+        "Previews",
+        "Tools"
+    ],
+    bottom_dock: [
+        "Console",
+        "Validation",
+        "Hot Reload",
+        "Runtime Log"
+    ],
+    toolbar: [
+        "Select",
+        "Pan",
+        "Brush",
+        "Eraser",
+        "Fill",
+        "Eyedropper",
+        "TilePicker",
+        "CollisionPaint",
+        "AssetStudio",
+        "Playtest"
+    ],
+    notes: [
+        "This is a native-rendered panel scaffold inside editor.exe, not the web Asset Lab.",
+        "Panel text is drawn with a small built-in bitmap font so the UI is readable before the full AtlasUI text system lands.",
+        "Bottom dock is reduced to status/log cards so it no longer hides as much of the game viewport.",
+        "Next phase should wire mouse hit-testing and real selected tile data into these panels."
+    ]
+)

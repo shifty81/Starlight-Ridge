@@ -1,0 +1,41 @@
+(
+    id: "web_companion_phase40",
+    display_name: "Starlight Ridge Web Companion Modes",
+    modes: [
+        (
+            id: "pc",
+            display_name: "PC Mode",
+            intent: "desktop browser editing and diagnostics",
+            layout: "three_column",
+            raw_file_panel: true,
+            touch_targets: "normal",
+        ),
+        (
+            id: "tablet",
+            display_name: "Tablet Mode",
+            intent: "LAN tablet review, paint, inspect, and quick edits",
+            layout: "canvas_first_single_column",
+            raw_file_panel: false,
+            touch_targets: "large",
+        ),
+    ],
+    server_endpoints: [
+        "/api/health",
+        "/api/server_info",
+        "/api/manifest",
+        "/api/map/<map_id>",
+        "/api/save/map/<map_id>/layers.ron",
+    ],
+    native_egui_integration: (
+        strategy: "control_panel_not_embedded_browser",
+        recommended_panel: "Settings/Web Companion",
+        responsibilities: [
+            "launch_server",
+            "show_lan_urls",
+            "show_write_mode",
+            "copy_pc_url",
+            "copy_tablet_url",
+            "open_local_pc_url",
+        ],
+    ),
+)

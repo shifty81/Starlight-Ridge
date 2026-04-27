@@ -1,0 +1,21 @@
+(
+    version: 1,
+    visible_layers: [
+        (id: "base_terrain", display_name: "Base Terrain", editable: true, required: true, help_doc_id: "wiki.editor.layers"),
+        (id: "terrain_overlay", display_name: "Terrain Overlay / Transition", editable: true, required: true, help_doc_id: "wiki.editor.layers"),
+        (id: "liquid_region", display_name: "Liquid Region", editable: true, required: true, help_doc_id: "wiki.editor.layers"),
+        (id: "ground_state", display_name: "Ground State", editable: true, required: true, help_doc_id: "wiki.editor.layers"),
+        (id: "ground_cover", display_name: "Ground Cover", editable: true, required: false, help_doc_id: "wiki.editor.layers"),
+        (id: "props_vegetation", display_name: "Props / Vegetation", editable: true, required: false, help_doc_id: "wiki.editor.layers"),
+        (id: "structures", display_name: "Structures", editable: true, required: false, help_doc_id: "wiki.editor.layers"),
+        (id: "collision_interaction", display_name: "Collision / Interaction", editable: true, required: true, help_doc_id: "wiki.editor.layers"),
+        (id: "spawns_regions", display_name: "Spawns / Regions", editable: true, required: false, help_doc_id: "wiki.editor.layers"),
+        (id: "lighting_ambience", display_name: "Lighting / Ambience Markers", editable: true, required: false, help_doc_id: "wiki.editor.layers"),
+    ],
+    derived_layers: [
+        (id: "fluid_depth_flow", display_name: "Fluid Depth/Flow", editable: false, rebuildable: true, help_doc_id: "wiki.simulation.liquids_weather_snow"),
+        (id: "snow_ice_deposition", display_name: "Snow / Ice Deposition", editable: false, rebuildable: true, help_doc_id: "wiki.simulation.liquids_weather_snow"),
+        (id: "wetness_puddle", display_name: "Wetness / Puddle Accumulation", editable: false, rebuildable: true, help_doc_id: "wiki.simulation.liquids_weather_snow"),
+        (id: "render_composite", display_name: "Autotile Resolution / Render Composite", editable: false, rebuildable: true, help_doc_id: "wiki.editor.layers"),
+    ],
+)

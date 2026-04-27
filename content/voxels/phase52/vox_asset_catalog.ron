@@ -1,0 +1,15 @@
+(
+    id: "phase52_vox_asset_catalog",
+    display_name: "Phase 52 VOX Asset Catalog",
+    bake_profiles: [
+        (id:"ortho_4dir_prop_32", display_name:"Orthographic 4-Direction Prop 32", output_tile_size:32, directions:["north","east","south","west"], orthographic_pitch_degrees:45.0, render_scale:1.0, emit_collision_mask:true, emit_shadow_mask:true, emit_footprint:true),
+        (id:"ortho_4dir_large_prop_64", display_name:"Orthographic 4-Direction Large Prop 64", output_tile_size:64, directions:["north","east","south","west"], orthographic_pitch_degrees:45.0, render_scale:1.0, emit_collision_mask:true, emit_shadow_mask:true, emit_footprint:true),
+        (id:"ortho_4dir_structure_96", display_name:"Orthographic 4-Direction Structure 96", output_tile_size:96, directions:["north","east","south","west"], orthographic_pitch_degrees:45.0, render_scale:1.0, emit_collision_mask:true, emit_shadow_mask:true, emit_footprint:true),
+    ],
+    assets: [
+        (id:"vox_tree_oak_small", display_name:"Small Oak Tree VOX", source_path:"assets/voxels/props/tree_oak_small.vox", category:"vegetation", bake_profile:"ortho_4dir_large_prop_64", footprint_width:2, footprint_height:2, anchor_x:32, anchor_y:56, collision_kind:"trunk_circle", seasonal:true, notes:"Placeholder contract for a generated 4-direction tree."),
+        (id:"vox_rock_granite_medium", display_name:"Medium Granite Rock VOX", source_path:"assets/voxels/props/rock_granite_medium.vox", category:"resource_prop", bake_profile:"ortho_4dir_prop_32", footprint_width:1, footprint_height:1, anchor_x:16, anchor_y:28, collision_kind:"solid_tile", seasonal:false, notes:"Mineable/resource rock source model."),
+        (id:"vox_farm_fence_segment", display_name:"Farm Fence Segment VOX", source_path:"assets/voxels/structures/fence_segment.vox", category:"structure", bake_profile:"ortho_4dir_prop_32", footprint_width:1, footprint_height:1, anchor_x:16, anchor_y:28, collision_kind:"edge_blocker", seasonal:false, notes:"Fence models should bake four views for camera rotation."),
+        (id:"vox_farmhouse_small", display_name:"Small Farmhouse VOX", source_path:"assets/voxels/structures/farmhouse_small.vox", category:"building", bake_profile:"ortho_4dir_structure_96", footprint_width:5, footprint_height:4, anchor_x:48, anchor_y:88, collision_kind:"building_footprint", seasonal:true, notes:"Longer-term generated building sprite target."),
+    ],
+)

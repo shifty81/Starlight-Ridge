@@ -1,0 +1,13 @@
+/target
+/logs/*
+!/logs/.gitkeep
+/artifacts/*
+!/artifacts/.gitkeep
+/saves/*
+!/saves/.gitkeep
+*.log
+*.zip
+cratesappsrcbin*.rs*
+cratesappsrcbineditor.rs*
+.DS_Store
+Thumbs.db

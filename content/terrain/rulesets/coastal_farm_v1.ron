@@ -1,0 +1,24 @@
+(
+    id: "coastal_farm_v1",
+    display_name: "Coastal Farm Rules v1",
+    active_transition_sets: [
+        "coastal_ground_v1",
+    ],
+    terrain_priority: [
+        "grass",
+        "dirt",
+        "path",
+        "tilled_dry",
+        "tilled_watered",
+        "sand",
+        "shallow_water",
+        "deep_water",
+    ],
+    pcg_rules: (
+        require_sand_band_between_grass_and_open_water: true,
+        minimum_pond_radius_tiles: 3,
+        preferred_pond_edge_noise: 0.35,
+        coast_smoothing_passes: 3,
+        protect_prefab_cells: true,
+    ),
+)

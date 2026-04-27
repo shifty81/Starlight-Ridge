@@ -1,0 +1,23 @@
+(
+    version: "phase27",
+    purpose: "Native Asset Studio contract; web Asset Lab remains fallback only.",
+    active_atlas: "assets/textures/terrain_atlas_phase17_generated.png",
+    tile_size: 32,
+    role_sidecar: "content/tiles/base_tileset_roles.ron",
+    preview_panels: [
+        "selected_tile",
+        "atlas_output",
+        "seam_diagnostic",
+        "live_game_viewport",
+    ],
+    save_policy: (
+        make_backup_before_overwrite: true,
+        hot_reload_after_save: true,
+        rebuild_required_for_content_edits: false,
+    ),
+    runtime_safe_atlas_export: (
+        enabled: true,
+        extrusion_pixels: 2,
+        output_suffix: "_runtime_safe",
+    ),
+)

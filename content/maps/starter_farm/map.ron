@@ -1,0 +1,9 @@
+(
+    id: "starter_farm",
+    display_name: "Starter Farm",
+    width: 40,
+    height: 28,
+    tileset: "base_tiles",
+    music: Some("farm_day"),
+    ambient_light: 0.88,
+)

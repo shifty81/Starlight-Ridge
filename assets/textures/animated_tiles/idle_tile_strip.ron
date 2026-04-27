@@ -1,0 +1,1 @@
+(\n    id: "idle_tile_strip",\n    texture: "assets/textures/animated_tiles/idle_tile_strip.png",\n    frame_width: 32,\n    frame_height: 32,\n    frames: 1,\n    fps: 4,\n    looped: true,\n)\n

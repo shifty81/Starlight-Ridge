@@ -1,0 +1,12 @@
+[package]
+name = "engine_input"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+log.workspace = true
+winit.workspace = true
+shared_types = { path = "../shared_types" }

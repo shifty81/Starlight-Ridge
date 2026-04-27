@@ -1,0 +1,20 @@
+(
+    version: "phase48",
+    ids: [
+        (id: "grass", description: "Base walkable grass; autotile may choose seasonal variants."),
+        (id: "grass_dark", description: "Grass variation / forest transition."),
+        (id: "forest_floor", description: "Tree-heavy natural ground."),
+        (id: "farmable_soil", description: "Clearing that can become tilled soil."),
+        (id: "path_dirt", description: "Walkable dirt path."),
+        (id: "sand", description: "Beach/coast base terrain."),
+        (id: "shallow_water", description: "Walk-blocking or wadeable water edge depending on rules."),
+        (id: "deep_water", description: "Blocked deep water; rendered below water animation overlays."),
+        (id: "coast_foam", description: "Transition overlay marker for water/sand seam."),
+        (id: "cliff", description: "Height/blocking transition."),
+        (id: "rock", description: "Natural rock marker; may become object spawn."),
+        (id: "tree_spawn", description: "Natural tree marker; may become prop/object spawn."),
+        (id: "building_zone", description: "Protected authored placement zone."),
+        (id: "exit_zone", description: "Scene transition region."),
+        (id: "protected", description: "Do not regenerate without explicit user approval."),
+    ],
+)

@@ -1,0 +1,9 @@
+(
+    id: "town",
+    display_name: "Town",
+    width: 32,
+    height: 24,
+    tileset: "base_tiles",
+    music: Some("town_day"),
+    ambient_light: 0.85,
+)

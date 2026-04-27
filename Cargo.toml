@@ -1,0 +1,66 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/app",
+    "crates/engine_window",
+    "crates/engine_input",
+    "crates/engine_time",
+    "crates/engine_math",
+    "crates/engine_render_gl",
+    "crates/engine_assets",
+    "crates/engine_audio",
+    "crates/engine_debug",
+    "crates/game_core",
+    "crates/game_world",
+    "crates/game_worldgen",
+    "crates/game_entities",
+    "crates/game_items",
+    "crates/game_inventory",
+    "crates/game_farming",
+    "crates/game_combat",
+    "crates/game_npc",
+    "crates/game_quests",
+    "crates/game_dialogue",
+    "crates/game_economy",
+    "crates/game_save",
+    "crates/game_data",
+    "crates/game_ui",
+    "crates/editor_core",
+    "crates/editor_tools",
+    "crates/editor_inspector",
+    "crates/editor_undo",
+    "crates/editor_data_bridge",
+    "crates/web_editor_server",
+    "crates/shared_types",
+]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT"
+authors = ["Shifty C"]
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "2"
+log = "0.4"
+env_logger = "0.11"
+serde = { version = "1", features = ["derive"] }
+ron = "0.10"
+serde_json = "1"
+toml = "0.9"
+glam = { version = "0.30", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+indexmap = { version = "2", features = ["serde"] }
+bitflags = "2"
+walkdir = "2"
+
+winit = "0.30"
+glow = "0.16"
+glutin = "0.32"
+glutin-winit = "0.5"
+raw-window-handle = "0.6"
+image = "0.25"
+notify = "8"
+rodio = "0.21"
+parking_lot = "0.12"

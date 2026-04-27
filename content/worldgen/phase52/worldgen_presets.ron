@@ -1,0 +1,40 @@
+(
+    id: "phase52_worldgen_preset_catalog",
+    display_name: "Phase 52 WorldGen Presets",
+    presets: [
+        (
+            id:"starter_farm_coastal_peninsula_phase52",
+            display_name:"Starter Farm Coastal Peninsula Phase 52",
+            scene_kind:"starter_farm",
+            width:96,
+            height:96,
+            seed_policy:"scene_seed_plus_world_seed",
+            biome_table:["coastal_forest","meadow_plains","farmland_cultivated"],
+            passes:[
+                (id:"macro_shape", display_name:"Macro Shape", pass_kind:"elevation_distance_to_ocean", order:0, enabled:true, writes_layers:["base_terrain"], reads_layers:[], notes:"Create peninsula, low beach shelves, and playable farm interior."),
+                (id:"biome_assignment", display_name:"Biome Assignment", pass_kind:"temperature_moisture_biome", order:10, enabled:true, writes_layers:["base_terrain","spawns_regions"], reads_layers:["base_terrain"], notes:"Assign coastal forest, meadow, and cultivated regions."),
+                (id:"hydrology", display_name:"Hydrology", pass_kind:"shoreline_streams_ponds", order:20, enabled:true, writes_layers:["liquid_region","terrain_overlay_transition"], reads_layers:["base_terrain"], notes:"Place coastline water, ponds, wet sand, and drainage hints."),
+                (id:"surface_materials", display_name:"Surface Materials", pass_kind:"material_selection", order:30, enabled:true, writes_layers:["base_terrain","ground_state"], reads_layers:["spawns_regions"], notes:"Select grass/sand/wet soil variants from biome/material catalogs."),
+                (id:"local_features", display_name:"Local Features", pass_kind:"feature_scatter", order:40, enabled:true, writes_layers:["props_vegetation","ground_cover"], reads_layers:["base_terrain","spawns_regions"], notes:"Place trees, rocks, reeds, driftwood, weeds, and resource props."),
+                (id:"authored_overlays", display_name:"Authored Overlays", pass_kind:"protected_prefab_bake", order:50, enabled:true, writes_layers:["structures","collision_interaction","spawns_regions"], reads_layers:["base_terrain"], notes:"Protect farm house, exits, plots, and future town/land links."),
+                (id:"runtime_init", display_name:"Runtime Seasonal/Weather Init", pass_kind:"derived_layer_initialization", order:60, enabled:true, writes_layers:["fluid_depth_flow","snow_ice_deposition","wetness_puddle_accumulation"], reads_layers:["liquid_region","weather"], notes:"Initialize derived simulation fields from season/weather state."),
+            ],
+            validation_profile:"phase52_default_validation",
+        ),
+        (
+            id:"biome_test_matrix_phase52",
+            display_name:"Biome Test Matrix Phase 52",
+            scene_kind:"test_map",
+            width:160,
+            height:96,
+            seed_policy:"fixed_debug_seed",
+            biome_table:["coastal_forest","temperate_woodland","meadow_plains","farmland_cultivated","marsh","swamp","taiga_pine_forest","tundra","alpine_snowfield","arid_scrub","desert_dune","volcanic_ashlands"],
+            passes:[
+                (id:"biome_stripes", display_name:"Biome Stripes", pass_kind:"debug_biome_blocks", order:0, enabled:true, writes_layers:["base_terrain","spawns_regions"], reads_layers:[], notes:"Generates a visible testing block for each biome."),
+                (id:"material_swatches", display_name:"Material Swatches", pass_kind:"debug_material_swatches", order:10, enabled:true, writes_layers:["base_terrain","terrain_overlay_transition"], reads_layers:["spawns_regions"], notes:"Places all grass/sand/water/lava/oil families for validation."),
+                (id:"weather_sim_cells", display_name:"Weather Simulation Cells", pass_kind:"debug_simulation_basins", order:20, enabled:true, writes_layers:["liquid_region","ground_state"], reads_layers:["base_terrain"], notes:"Creates puddle/snow/melt/lava/oil test basins."),
+            ],
+            validation_profile:"phase52_default_validation",
+        ),
+    ],
+)

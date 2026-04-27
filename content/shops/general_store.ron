@@ -1,0 +1,6 @@
+(
+    id: "general_store",
+    stock: [
+        (item_id: "turnip_seed", quantity: 20),
+    ],
+)

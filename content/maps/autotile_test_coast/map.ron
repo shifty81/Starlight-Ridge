@@ -1,0 +1,9 @@
+(
+    id: "autotile_test_coast",
+    display_name: "Autotile Test Coast",
+    width: 48,
+    height: 30,
+    tileset: "base_tiles",
+    music: Some("farm_day"),
+    ambient_light: 0.9,
+)

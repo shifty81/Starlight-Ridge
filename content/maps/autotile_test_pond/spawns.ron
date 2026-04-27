@@ -1,0 +1,3 @@
+[
+    (id: "player_start", kind: "player", ref_id: None, x: 4, y: 20),
+]

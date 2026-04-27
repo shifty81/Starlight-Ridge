@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Starlight Ridge Editor Labs</title>
+<style>
+:root{color-scheme:dark;--bg:#0e1420;--panel:#171f2e;--panel2:#202b3d;--line:#344055;--text:#eaf0ff;--muted:#9aa8c0;--accent:#8ec7ff;--ok:#a7f3d0;--warn:#ffd28a;--bad:#ff9e9e}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px system-ui,Segoe UI,Arial,sans-serif;overflow:hidden}
+header{height:50px;display:flex;align-items:center;gap:10px;padding:0 14px;background:#111827;border-bottom:1px solid var(--line)}
+h1{font-size:17px;margin:0 8px 0 0}.pill{padding:4px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);white-space:nowrap}.tabBtn{background:#0f1726;color:var(--text);border:1px solid var(--line);border-radius:999px;padding:7px 11px;cursor:pointer}.tabBtn.active{outline:2px solid var(--accent);color:#fff}
+.view{display:none;height:calc(100vh - 50px);padding:10px;gap:10px}.view.active{display:grid}.three{grid-template-columns:280px 1fr 340px}.twoWide{grid-template-columns:320px 1fr 360px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;min-height:0}.panel h2{font-size:14px;margin:0;padding:10px 12px;background:var(--panel2);border-bottom:1px solid var(--line)}
+.body{padding:10px;overflow:auto;min-height:0}.row{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}.col{display:flex;flex-direction:column;gap:8px}.spacer{flex:1}
+button,select,input{background:#0f1726;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px}button{cursor:pointer}button:hover{border-color:var(--accent)}button.active{outline:2px solid var(--accent)}button.danger{border-color:#783232}button.warn{border-color:#715a22}
+select{width:100%}label{color:var(--muted);font-size:12px}.small{font-size:12px;color:var(--muted);line-height:1.35}.good{color:var(--ok)}.warnText{color:var(--warn)}.badText{color:var(--bad)}
+canvas{image-rendering:pixelated;background:#0b1020;border:1px solid var(--line);border-radius:8px}#atlasView{width:100%;height:auto;max-height:70vh}#atlasOutput{width:100%;height:auto;max-height:34vh}.atlasQueue{display:grid;gap:8px}.atlasQueue .queueSlot{border:1px dashed var(--line);border-radius:10px;background:#101827;padding:8px;color:var(--muted);font-size:12px;line-height:1.35}
+#pixelCanvas{width:min(66vh,680px);height:min(66vh,680px);touch-action:none}
+.canvasViewport{position:relative;display:inline-block;line-height:0}
+.canvasOverlay{position:absolute;inset:0;pointer-events:none;border-radius:8px}
+.pixelGridOverlay{display:none;z-index:2;--pixel-count:32;background-image:linear-gradient(to right, rgba(0,0,0,.92) 1px, transparent 1px),linear-gradient(to bottom, rgba(0,0,0,.92) 1px, transparent 1px);background-size:calc(100% / var(--pixel-count)) calc(100% / var(--pixel-count));background-position:0 0}
+.pixelGridOverlay.active{display:block}
+.mirrorGuide{position:absolute;display:none;pointer-events:none;background:#ff2445;box-shadow:0 0 8px rgba(255,36,69,.85);z-index:3}
+.mirrorGuide.active{display:block}
+.mirrorGuide.vertical{top:0;bottom:0;left:50%;width:2px;transform:translateX(-1px)}
+.mirrorGuide.horizontal{left:0;right:0;top:50%;height:2px;transform:translateY(-1px)}
+.assetEditorBody{display:grid;grid-template-columns:72px 220px minmax(340px,1fr);gap:14px;align-items:stretch;height:100%;min-height:0}.toolRail{align-self:stretch;display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:flex-start;background:#101827;border:1px solid var(--line);border-radius:12px;padding:10px 8px}.toolGroup{display:flex;flex-direction:column;gap:6px;width:100%;align-items:center}.toolDivider{height:1px;background:var(--line);width:100%;margin:4px 0}.toolIcon{width:42px;height:42px;display:flex;align-items:center;justify-content:center;font-size:20px;padding:0;border-radius:10px;position:relative}.toolIcon.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(142,199,255,.35), inset 0 0 16px rgba(142,199,255,.12);background:#13233a}.toolIcon:hover::after,.iconAction:hover::after,.displayToggle:hover::after{content:attr(data-tip);position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%);white-space:nowrap;background:#07101d;border:1px solid var(--accent);color:var(--text);padding:6px 8px;border-radius:8px;z-index:20;box-shadow:0 10px 24px rgba(0,0,0,.35);font-size:12px}.canvasDesk{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0;gap:12px}.canvasFrame{background:#121b2a;border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px rgba(255,255,255,.02)}.secondaryActionBar{display:flex;gap:7px;flex-wrap:wrap;align-items:center;justify-content:center;background:#101827;border:1px solid var(--line);border-radius:12px;padding:8px 10px;max-width:100%}.iconAction{position:relative;min-width:38px;height:36px;padding:0 10px;font-weight:700}.propertyCard{border:1px solid var(--line);border-radius:12px;background:#101827;padding:10px;margin:10px 0}.editorOptionRail{align-self:stretch;background:#101827;border:1px solid var(--line);border-radius:12px;padding:10px;overflow:auto;min-width:0}.editorOptionRail .propertyCard{margin:0 0 10px 0}.editorOptionRail .displayOptions{grid-template-columns:1fr}.propertyCard h4{margin:0 0 8px 0;font-size:13px;color:var(--text)}.colorPanel{display:grid;grid-template-columns:42px 1fr;gap:10px;align-items:center}.colorPanel .swatch{width:40px;height:40px}.sliderRow{display:grid;grid-template-columns:18px 1fr 38px;gap:8px;align-items:center;margin:6px 0}.sliderRow output{font-size:11px;color:var(--muted);text-align:right}.displayOptions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.displayToggle{position:relative;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;background:#0f1726;padding:8px;cursor:pointer;color:var(--muted);font-size:12px}.displayToggle input{display:none}.displayToggle .toggleLight{width:18px;height:18px;border-radius:6px;border:1px solid var(--line);background:#101827;display:inline-block}.displayToggle:has(input:checked){border-color:var(--accent);color:var(--text);box-shadow:inset 0 0 18px rgba(142,199,255,.08)}.displayToggle:has(input:checked) .toggleLight{background:var(--accent);box-shadow:0 0 12px rgba(142,199,255,.75)}.tileMetaLine{display:flex;justify-content:center;gap:10px;color:var(--muted);font-size:12px}.panel h3{margin:8px 0 8px;font-size:14px}.previewStack canvas{max-width:100%}.swatch{width:28px;height:28px;border-radius:8px;border:1px solid var(--line)}.previewBig{width:160px;height:160px}.seam{width:224px;height:224px}.frameList{display:flex;gap:5px;flex-wrap:wrap}.frameBtn{min-width:38px;padding:6px;position:relative}.frameBtn small{display:block;color:var(--muted);font-size:10px}.status{min-height:36px;white-space:pre-wrap;color:#a7f3d0;background:#0f1726;border:1px solid var(--line);border-radius:8px;padding:8px}
+hr{border:0;border-top:1px solid var(--line);width:100%;margin:12px 0}.miniGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;color:var(--muted);font-size:12px}.layerList button{width:100%;text-align:left;margin-bottom:5px}.characterCanvas{width:min(80vw,768px);max-height:70vh}.noteBox{border:1px solid var(--line);background:#101827;border-radius:10px;padding:8px;margin:8px 0}
+
+.assetList{display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 250px);overflow:auto}
+.assetItem{border:1px solid var(--line);border-radius:9px;background:#101827;padding:7px;cursor:pointer}
+.assetItem:hover,.assetItem.active{border-color:var(--accent)}
+.assetItem b{display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.assetItem small{display:block;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.assetToolbar{position:sticky;top:0;background:var(--panel);z-index:1;padding-bottom:6px}
+#assetPreview{width:100%;height:auto;max-height:40vh}
+.textPreview{white-space:pre-wrap;word-break:break-word;max-height:60vh;overflow:auto;font-size:12px}
+.issue{border:1px solid var(--line);background:#101827;border-radius:8px;padding:7px;margin:6px 0}
+.issue.error{border-color:#a33;color:#ffd3d3}.issue.warn{border-color:#a97824;color:#ffe0aa}.issue.info{border-color:#345a8a;color:#cfe5ff}.issue.ok{border-color:#2b7d52;color:#bcf7d2}
+.roleRows{display:flex;flex-direction:column;gap:5px;max-height:calc(100vh - 310px);overflow:auto}
+.roleRow{display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;border:1px solid var(--line);border-radius:8px;background:#101827;padding:6px;cursor:pointer}
+.roleRow.active{border-color:var(--accent);background:#13233a}.roleRow span{font-size:12px;color:var(--muted)}.roleRow b{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#roleAtlas{width:100%;height:auto;max-height:68vh}.fieldGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.checkGrid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+
+
+.worldLayout{grid-template-columns:300px 1fr 360px}.worldCanvasWrap{height:100%;display:flex;align-items:center;justify-content:center;background:#0b1020;border-radius:10px;border:1px solid var(--line);overflow:auto}.worldToolbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.contextMenu{position:fixed;z-index:1000;background:#101827;border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 16px 40px rgba(0,0,0,.45);display:none;min-width:230px}.contextMenu button{display:block;width:100%;text-align:left;margin:2px 0}.worldMini{width:96px;height:96px}.legendRow{display:grid;grid-template-columns:24px 1fr auto;gap:6px;align-items:center;border:1px solid var(--line);background:#101827;border-radius:8px;padding:5px;margin:4px 0}.legendSym{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:6px;background:#0f1726;width:24px;height:24px;font-weight:700}.mapLayerBtn.active{outline:2px solid var(--accent)}#worldCanvas{max-width:100%;max-height:calc(100vh - 170px)}
+
+</style>
+</head>
+<body>
+<header>
+  <h1>Starlight Ridge Editor Labs</h1>
+  <button class="tabBtn" data-tab="browserTab">Project Browser</button>
+  <button class="tabBtn" data-tab="tilesetTab">Tileset Roles</button>
+  <button class="tabBtn active" data-tab="assetTab">Asset Lab</button>
+  <button class="tabBtn" data-tab="worldTab">World Preview</button>
+  <button class="tabBtn" data-tab="animationTab">Animation Lab</button>
+  <button class="tabBtn" data-tab="characterTab">Character Lab</button>
+  <span class="pill">atlas-safe editor</span>
+  <span class="pill">copy / paste / select</span>
+  <span id="conn" class="pill">checking server…</span>
+</header>
+
+
+<main id="browserTab" class="view three">
+<section class="panel">
+<h2>Project Asset Browser</h2>
+<div class="body">
+  <div class="assetToolbar">
+    <div class="row"><button id="refreshAssetsBtn">Refresh Assets</button><button id="runValidationBtn">Run Validation</button></div>
+    <label>Search</label><input id="assetSearch" placeholder="filter textures, maps, metadata..." style="width:100%">
+    <div class="row"><label>Type</label><select id="assetTypeFilter"><option value="">all</option></select></div>
+  </div>
+  <div id="assetList" class="assetList"></div>
+</div>
+</section>
+<section class="panel">
+<h2>Asset Preview</h2>
+<div class="body">
+  <div class="kv"><b>Path</b><span id="assetPath">none</span><b>Type</b><span id="assetType">none</span><b>Used By</b><span id="assetUsedBy">none</span></div>
+  <div class="row"><button id="openAssetLabBtn">Open Texture In Asset Lab</button><button id="openTextAssetBtn">Reload Text Preview</button></div>
+  <canvas id="assetPreview" width="256" height="256"></canvas>
+  <pre id="assetTextPreview" class="status textPreview"></pre>
+</div>
+</section>
+<section class="panel">
+<h2>Metadata Validation</h2>
+<div class="body">
+  <p class="small">Checks missing texture references, duplicate tile IDs, atlas coordinate issues, map layer legend references, and sidecar tile role coverage.</p>
+  <div id="validationResults"></div>
+</div>
+</section>
+</main>
+
+<main id="tilesetTab" class="view three">
+<section class="panel">
+<h2>Tileset Role Editor</h2>
+<div class="body">
+  <label>Tileset RON</label>
+  <input id="tilesetPath" value="content/tiles/base_tileset.ron" style="width:100%">
+  <div class="row"><button id="loadTileRolesBtn">Load Tileset Roles</button><button id="saveTileRolesBtn">Save Role Sidecar</button></div>
+  <div class="noteBox small">This saves <b>base_tileset_roles.ron</b> beside base_tileset.ron. It does not inject unknown fields into base_tileset.ron, so the current Rust loader stays safe.</div>
+  <hr>
+  <h3>Selected Tile</h3>
+  <div class="kv"><b>ID</b><span id="roleTileId">none</span><b>Coord</b><span id="roleCoord">none</span><b>Sidecar</b><span id="roleSidecar">none</span></div>
+  <div class="fieldGrid">
+    <div><label>Role</label><select id="roleSelect">
+      <option>grass</option><option>path</option><option>sand</option><option>shore</option><option>water</option><option>cliff</option><option>crop_soil</option><option>stone</option><option>wood</option><option>fence</option><option>wall</option><option>building</option><option>door</option><option>blocking_prop</option><option>decor</option>
+    </select></div>
+    <div><label>Collision</label><select id="collisionSelect"><option>walkable</option><option>blocked</option><option>water</option><option>bridge</option><option>interactable</option><option>crop_soil</option><option>door</option><option>decor_only</option></select></div>
+  </div>
+  <div class="checkGrid">
+    <label><input id="roleWalkable" type="checkbox"> walkable</label>
+    <label><input id="roleBlocks" type="checkbox"> blocks movement</label>
+    <label><input id="roleWater" type="checkbox"> water</label>
+    <label><input id="roleInteract" type="checkbox"> interactable</label>
+    <label><input id="roleCrop" type="checkbox"> crop soil</label>
+    <label><input id="roleDoor" type="checkbox"> door/portal</label>
+  </div>
+  <div class="row"><button id="applyRoleBtn">Apply To Selected</button><button id="roleDefaultsBtn">Apply Defaults From Role</button></div>
+  <hr>
+  <h3>Runtime-Safe Atlas Export</h3>
+  <div class="row"><label>Padding</label><input id="extrudePad" type="number" min="1" max="8" value="2" style="width:70px"></div>
+  <input id="extrudePath" value="assets/textures/runtime/terrain_atlas_phase17_generated_runtime_padded.png" style="width:100%">
+  <div class="row"><button id="exportRoleAtlasBtn">Export Padded Runtime Atlas</button></div>
+  <div id="roleStatus" class="status"></div>
+</div>
+</section>
+<section class="panel">
+<h2>Tileset Atlas</h2>
+<div class="body">
+  <canvas id="roleAtlas"></canvas>
+  <p class="small">Click a tile cell to select the matching named tile entry. The blue overlay is display-only.</p>
+</div>
+</section>
+<section class="panel">
+<h2>Named Tiles</h2>
+<div class="body">
+  <input id="roleSearch" placeholder="filter tile IDs / roles / collision" style="width:100%">
+  <div id="roleRows" class="roleRows"></div>
+</div>
+</section>
+</main>
+
+<main id="assetTab" class="view three active">
+<section class="panel">
+<h2>Texture Map</h2>
+<div class="body">
+  <label>Editable PNG inside assets/textures</label>
+  <select id="fileSelect"></select>
+  <div class="row"><button id="reloadBtn">Reload</button><button id="saveAtlasBtn">Save Atlas PNG</button></div>
+  <div class="row"><label>Cell</label><input id="cellSize" type="number" value="32" min="8" max="128" style="width:80px"><button id="sliceBtn">Reslice</button></div>
+  <canvas id="atlasView"></canvas>
+  <p class="small">Click a tile to load it. The blue grid is display-only and is never written into the atlas.</p>
+  <hr>
+  <h3>Atlas Compare / Import Queue</h3>
+  <div class="atlasQueue">
+    <div class="queueSlot"><b>Templates removed.</b><br>This space is reserved for the side-by-side atlas import/merge workflow instead of generated placeholder tiles.</div>
+    <div class="queueSlot">Next native/editor pass: source atlas on the left, project atlas on the right, drag/copy/overwrite/append, and mirror-aware paste.</div>
+  </div>
+</div>
+</section>
+
+<section class="panel assetPixelPanel">
+<h2>Pixel Editor</h2>
+<div class="body assetEditorBody">
+  <aside class="toolRail" aria-label="Pixel editor tools">
+    <div class="toolGroup">
+      <button id="pencilBtn" class="toolIcon active" title="Pencil (B)" data-tip="Pencil (B)">✎</button>
+      <button id="eraserBtn" class="toolIcon" title="Eraser (E)" data-tip="Eraser (E)">▱</button>
+      <button id="fillBtn" class="toolIcon" title="Fill Bucket (G)" data-tip="Fill Bucket (G)">▰</button>
+      <button id="pickBtn" class="toolIcon" title="Pick Color (I)" data-tip="Pick Color (I)">◉</button>
+      <button id="selectBtn" class="toolIcon" title="Marquee Select (M)" data-tip="Marquee Select (M)">▣</button>
+    </div>
+    <div class="toolDivider"></div>
+    <div class="toolGroup">
+      <button id="copyBtn" class="toolIcon" title="Copy (Ctrl+C)" data-tip="Copy (Ctrl+C)">⧉</button>
+      <button id="cutBtn" class="toolIcon" title="Cut (Ctrl+X)" data-tip="Cut (Ctrl+X)">✂</button>
+      <button id="pasteBtn" class="toolIcon" title="Paste (Ctrl+V)" data-tip="Paste (Ctrl+V)">▤</button>
+      <button id="deselectBtn" class="toolIcon" title="Deselect (Ctrl+D)" data-tip="Deselect (Ctrl+D)">◇</button>
+    </div>
+    <div class="toolDivider"></div>
+    <div class="toolGroup">
+      <button id="undoBtn" class="toolIcon" title="Undo (Ctrl+Z)" data-tip="Undo (Ctrl+Z)">↶</button>
+      <button id="redoBtn" class="toolIcon" title="Redo (Ctrl+Y)" data-tip="Redo (Ctrl+Y)">↷</button>
+      <button id="clearBtn" class="toolIcon warn" title="Clear Tile" data-tip="Clear Tile">⌫</button>
+    </div>
+  </aside>
+
+  <aside class="editorOptionRail" aria-label="Pixel editor color and display options">
+    <div class="propertyCard">
+      <h4>Color / RGBA</h4>
+      <div class="colorPanel"><div id="swatch" class="swatch"></div><input id="color" type="color" value="#54aa3d" title="Current color"></div>
+      <div class="sliderRow"><label>R</label><input id="r" type="range" min="0" max="255" value="84"><output id="rOut">84</output></div>
+      <div class="sliderRow"><label>G</label><input id="g" type="range" min="0" max="255" value="170"><output id="gOut">170</output></div>
+      <div class="sliderRow"><label>B</label><input id="b" type="range" min="0" max="255" value="61"><output id="bOut">61</output></div>
+      <div class="sliderRow"><label>A</label><input id="a" type="range" min="0" max="255" value="255"><output id="aOut">255</output></div>
+    </div>
+
+    <div class="propertyCard">
+      <h4>Display Options</h4>
+      <div class="displayOptions">
+        <label class="displayToggle" title="Toggle editor pixel grid" data-tip="True Pixel Grid"><input id="gridToggle" type="checkbox" checked><span class="toggleLight"></span><span>Pixel Grid</span></label>
+        <label class="displayToggle" title="Toggle atlas tile grid" data-tip="Atlas Tile Grid"><input id="atlasGridToggle" type="checkbox" checked><span class="toggleLight"></span><span>Atlas Grid</span></label>
+        <label class="displayToggle" title="Mirror left/right painting; shows a vertical red guide" data-tip="Horizontal Mirror"><input id="mirrorHToggle" type="checkbox"><span class="toggleLight"></span><span>Mirror H</span></label>
+        <label class="displayToggle" title="Mirror top/bottom painting; shows a horizontal red guide" data-tip="Vertical Mirror"><input id="mirrorVToggle" type="checkbox"><span class="toggleLight"></span><span>Mirror V</span></label>
+      </div>
+    </div>
+  </aside>
+
+  <div class="canvasDesk">
+    <div class="canvasFrame">
+      <div id="pixelViewport" class="canvasViewport">
+        <canvas id="pixelCanvas" width="32" height="32"></canvas>
+        <div id="pixelGridOverlay" class="canvasOverlay pixelGridOverlay" aria-hidden="true"></div>
+        <div id="mirrorVerticalGuide" class="mirrorGuide vertical" aria-hidden="true"></div>
+        <div id="mirrorHorizontalGuide" class="mirrorGuide horizontal" aria-hidden="true"></div>
+      </div>
+    </div>
+    <div class="secondaryActionBar" aria-label="Tile commit and seam cleanup actions">
+      <button id="commitBtn" class="iconAction" title="Commit Tile To Atlas" data-tip="Commit Tile To Atlas">✓ Atlas</button>
+      <button id="edgeLtoRBtn" class="iconAction" title="Copy Left Edge To Right" data-tip="Copy Left → Right">L→R</button>
+      <button id="edgeRtoLBtn" class="iconAction" title="Copy Right Edge To Left" data-tip="Copy Right → Left">R→L</button>
+      <button id="edgeTtoBBtn" class="iconAction" title="Copy Top Edge To Bottom" data-tip="Copy Top → Bottom">T→B</button>
+      <button id="edgeBtoTBtn" class="iconAction" title="Copy Bottom Edge To Top" data-tip="Copy Bottom → Top">B→T</button>
+      <button id="blendHBtn" class="iconAction" title="Blend Left/Right Edges" data-tip="Blend Left/Right">↔</button>
+      <button id="blendVBtn" class="iconAction" title="Blend Top/Bottom Edges" data-tip="Blend Top/Bottom">↕</button>
+      <button id="softBorderBtn" class="iconAction" title="Soften Border Pixels" data-tip="Soften Border">Soft</button>
+      <button id="exportCurrentAtlasBtn" class="iconAction" title="Export Runtime-Safe Padded Atlas" data-tip="Export Runtime-Safe Atlas">Export</button>
+    </div>
+    <div class="tileMetaLine"><span id="tileInfo">No tile selected yet.</span></div>
+    <div class="small">Canvas-first layout: tools and color/display controls stay left of the canvas; the pixel grid is a true line overlay that never changes or tints the art.</div>
+  </div>
+</div>
+
+</section>
+
+<section class="panel previewStack">
+<h2>Preview / Properties</h2>
+<div class="body">
+  <h3>Selected Tile Preview</h3>
+  <div class="row"><canvas id="selectedPreview" class="previewBig" width="128" height="128"></canvas><div class="kv"><b>Tile</b><span id="coordReadout">-</span><b>Mode</b><span id="toolReadout">pencil</span><b>Selection</b><span id="selReadout">none</span></div></div>
+
+  <div class="noteBox small">Color/RGBA and display controls now live in the left-side options rail next to the tool buttons, keeping this panel focused on previews and diagnostics.</div>
+
+  <hr>
+  <h3>Atlas Output Preview</h3>
+  <canvas id="atlasOutput"></canvas>
+  <p class="small">Actual output atlas image with selected tile highlighted. Grid overlays are display-only and are not saved.</p>
+  <hr>
+  <h3>Seam Diagnostic</h3>
+  <canvas id="seamCanvas" class="seam" width="96" height="96"></canvas>
+  <p class="small">Repeated preview for seam testing only, not world placement.</p>
+  <div id="seamInfo" class="small"></div>
+  <pre id="status" class="status"></pre>
+</div>
+
+</section>
+</main>
+
+
+<main id="worldTab" class="view worldLayout">
+<section class="panel">
+<h2>World Preview / Map Editor</h2>
+<div class="body">
+  <label>Map</label><select id="worldMapSelect"></select>
+  <div class="row"><button id="loadWorldBtn">Load Map</button><button id="saveWorldBtn">Save Map</button><button id="reloadWorldBtn">Reload</button></div>
+  <div class="noteBox small">This is the browser-side world editor prototype. Left-click selects a cell. Right-click opens tile actions. Use the Asset Lab tile as the paint source, or choose a named tile below.</div>
+  <hr>
+  <h3>Layers</h3><div id="worldLayerButtons" class="layerList"></div>
+  <hr>
+  <h3>Paint Source</h3>
+  <label>Named Tile</label><select id="worldPaintTile"></select>
+  <div class="row"><button id="useAssetTileBtn">Use Asset Lab Tile</button><button id="paintModeBtn">Paint Mode Off</button></div>
+  <div class="kv"><b>Paint Tile</b><span id="worldPaintReadout">none</span><b>Selected Cell</b><span id="worldCellReadout">none</span><b>Source</b><span id="worldSourceReadout">none</span></div>
+  <hr>
+  <h3>Visible Overlays</h3>
+  <label><input id="worldGridToggle" type="checkbox" checked> tile grid</label><br>
+  <label><input id="worldObjectToggle" type="checkbox" checked> object layers</label><br>
+  <label><input id="worldCollisionToggle" type="checkbox"> collision tint from roles</label>
+  <div id="worldStatus" class="status" style="margin-top:10px"></div>
+</div>
+</section>
+<section class="panel">
+<h2>Editable World Viewport</h2>
+<div class="body">
+  <div class="worldToolbar">
+    <button id="zoomOutWorldBtn">-</button><span class="pill" id="worldZoomReadout">100%</span><button id="zoomInWorldBtn">+</button>
+    <button id="worldFitBtn">Fit</button><span class="spacer"></span><span class="pill">right-click tile for actions</span>
+  </div>
+  <div class="worldCanvasWrap"><canvas id="worldCanvas" width="1280" height="896"></canvas></div>
+</div>
+</section>
+<section class="panel">
+<h2>Tile Context / Inspector</h2>
+<div class="body">
+  <h3>Selected World Tile</h3>
+  <div class="row"><canvas id="worldTilePreview" class="worldMini" width="96" height="96"></canvas><div class="kv"><b>Layer</b><span id="worldInfoLayer">-</span><b>XY</b><span id="worldInfoXY">-</span><b>Symbol</b><span id="worldInfoSymbol">-</span><b>Tile ID</b><span id="worldInfoTile">-</span></div></div>
+  <div class="row"><button id="openWorldTileInAssetBtn">Open Source Tile In Asset Lab</button><button id="replaceWorldTileBtn">Replace With Paint Tile</button></div>
+  <div class="row"><button id="cloneWorldTileBtn">Clone/Edit From This Tile</button><button id="saveWorldAndReloadBtn">Save + Hot Reload</button></div>
+  <hr>
+  <h3>Layer Legend</h3><div id="worldLegendList"></div>
+  <hr>
+  <h3>Workflow</h3>
+  <ol class="small">
+    <li>Pick a map and layer.</li>
+    <li>Right-click a tile in the viewport.</li>
+    <li>Inspect, replace, or open its source tile in Asset Lab.</li>
+    <li>Save map changes, then hot reload the running game/editor.</li>
+  </ol>
+</div>
+</section>
+</main>
+
+<div id="worldContextMenu" class="contextMenu">
+  <button data-action="inspect">Inspect Tile</button>
+  <button data-action="replace">Replace With Paint Tile</button>
+  <button data-action="openAsset">Open Source Tile In Asset Lab</button>
+  <button data-action="cloneAsset">Clone/Edit From This Tile</button>
+  <button data-action="paintMode">Use This Tile As Paint Source</button>
+</div>
+
+<main id="animationTab" class="view twoWide">
+<section class="panel"><h2>Animation Source</h2><div class="body">
+  <p class="small">Animation Lab uses the tile currently open in Asset Lab as a frame source. Edit a tile, then add/update frames here.</p>
+  <div class="row"><button id="addFrameBtn">Add Frame From Editor</button><button id="updateFrameBtn">Update Selected Frame</button></div>
+  <div class="row"><button id="dupFrameBtn">Duplicate</button><button id="deleteFrameBtn" class="danger">Delete</button><button id="leftFrameBtn">Move Left</button><button id="rightFrameBtn">Move Right</button></div>
+  <div class="row"><label>Frame Duration MS</label><input id="frameMs" type="number" value="250" min="25" max="5000" style="width:100px"></div>
+  <div class="row"><label>Loop Mode</label><select id="loopMode"><option value="loop">loop</option><option value="ping_pong">ping pong</option><option value="once">once</option></select></div>
+  <div class="row"><label>Save path</label></div><input id="animPath" value="assets/textures/animated_tiles/idle_tile_strip.png" style="width:100%">
+  <div class="row"><button id="saveAnimBtn">Save Animation Strip + RON</button></div>
+  <hr><h3>Frame List</h3><div id="frames" class="frameList"></div>
+</div></section>
+<section class="panel"><h2>Timeline / Strip Preview</h2><div class="body col" style="align-items:center">
+  <canvas id="stripPreview" width="512" height="96" style="width:100%;max-height:180px"></canvas>
+  <div class="row"><button id="playBtn">Play</button><button id="stopBtn">Stop</button><label>FPS fallback</label><input id="fps" type="number" value="4" min="1" max="24" style="width:80px"></div>
+  <canvas id="animPreview" width="160" height="160" style="width:220px;height:220px"></canvas>
+  <div class="small">Per-frame durations override FPS when saved. FPS is kept as a simple fallback for older runtime paths.</div>
+</div></section>
+<section class="panel"><h2>Animation Metadata Preview</h2><div class="body"><pre id="animRon" class="status"></pre></div></section>
+</main>
+
+<main id="characterTab" class="view twoWide">
+<section class="panel"><h2>Character Template</h2><div class="body">
+  <label>Base mannequin</label><select id="bodyTemplate"><option value="assets/textures/characters/base_male_underwear.png">base male underwear</option><option value="assets/textures/characters/base_female_underwear.png">base female underwear</option></select>
+  <div class="row"><button id="loadBodyBtn">Load Body Template</button><button id="resetCharBtn" class="warn">Reset Layers</button></div>
+  <hr><h3>Layer Stack</h3><div id="charLayers" class="layerList"></div>
+  <div class="noteBox small">Character Lab v1 is non-destructive. Body, clothing, hair, and equipment are separate layers. Save exports a composite preview plus editable layer metadata.</div>
+</div></section>
+<section class="panel"><h2>Character Design Canvas</h2><div class="body col" style="align-items:center">
+  <canvas id="characterCanvas" class="characterCanvas" width="128" height="48"></canvas>
+  <div class="row"><button id="charPencilBtn" class="active">Pencil</button><button id="charEraserBtn">Eraser</button><button id="charFillBtn">Fill</button><button id="charPickBtn">Pick</button><button id="charClearLayerBtn" class="warn">Clear Layer</button></div>
+  <div class="small">Sheet layout: front, side, back, side. This is the first foundation for clothing overlays over a mannequin.</div>
+</div></section>
+<section class="panel"><h2>Character Preview / Save</h2><div class="body">
+  <canvas id="charZoom" width="256" height="384" style="width:256px;height:384px"></canvas>
+  <div class="row"><label>Save composite path</label></div><input id="charSavePath" value="assets/textures/characters/custom_character_composite.png" style="width:100%">
+  <div class="row"><button id="saveCharacterBtn">Save Character Composite + RON</button></div>
+  <pre id="charStatus" class="status"></pre>
+</div></section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const status=t=>{$('status').textContent=t};
+async function api(path, opts){ const r=await fetch(path, opts); if(!r.ok) throw new Error(await r.text()); return r; }
+
+let cell=32, selected={x:0,y:0}, tool='pencil', drawing=false;
+let atlasData=document.createElement('canvas'), atlasDataCtx=atlasData.getContext('2d',{willReadFrequently:true});
+let atlasView=$('atlasView'), atlasViewCtx=atlasView.getContext('2d');
+let atlasOutput=$('atlasOutput'), atlasOutputCtx=atlasOutput.getContext('2d');
+let edit=document.createElement('canvas'), ectx=edit.getContext('2d',{willReadFrequently:true});
+let pix=$('pixelCanvas'), pctx=pix.getContext('2d',{willReadFrequently:true});
+let selectedPreview=$('selectedPreview'), spctx=selectedPreview.getContext('2d');
+let seam=$('seamCanvas'), seamctx=seam.getContext('2d');
+let undoStack=[], redoStack=[], selection=null, selectStart=null, clipboard=null, moving=false, floating=null;
+
+function setTab(id){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===id));document.querySelectorAll('.tabBtn').forEach(b=>b.classList.toggle('active',b.dataset.tab===id)); if(id==='worldTab') { loadWorldMaps().catch(e=>worldStatus('World load failed: '+e.message)); setTimeout(drawWorld,0); } if(id==='animationTab') renderFrames(); if(id==='characterTab') drawCharacter();}
+document.querySelectorAll('.tabBtn').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
+function pushUndo(){undoStack.push(ectx.getImageData(0,0,cell,cell)); if(undoStack.length>50) undoStack.shift(); redoStack.length=0;}
+function undo(){if(!undoStack.length)return; redoStack.push(ectx.getImageData(0,0,cell,cell)); ectx.putImageData(undoStack.pop(),0,0); drawEditor();}
+function redo(){if(!redoStack.length)return; undoStack.push(ectx.getImageData(0,0,cell,cell)); ectx.putImageData(redoStack.pop(),0,0); drawEditor();}
+function rgba(){return [+$('r').value,+$('g').value,+$('b').value,+$('a').value]}
+function cssRgba(){const [r,g,b,a]=rgba();return `rgba(${r},${g},${b},${a/255})`}
+function syncColorFromSliders(){ const [r,g,b,a]=rgba(); $('swatch').style.background=cssRgba(); $('color').value='#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join(''); updateSliderOutputs(); }
+function updateSliderOutputs(){for(const id of ['r','g','b','a']){const out=$(id+'Out');if(out)out.textContent=$(id).value;}}
+function refreshDisplayToggleState(){for(const id of ['gridToggle','atlasGridToggle','mirrorHToggle','mirrorVToggle']){const el=$(id);if(el&&el.closest('.displayToggle'))el.closest('.displayToggle').classList.toggle('active',el.checked);}}
+function updateCanvasOverlays(){const grid=$('pixelGridOverlay');if(grid){grid.classList.toggle('active',!!$('gridToggle')?.checked);grid.style.setProperty('--pixel-count',String(cell));grid.style.backgroundSize=`${100/cell}% ${100/cell}%`;}const mv=$('mirrorVerticalGuide');if(mv)mv.classList.toggle('active',!!$('mirrorHToggle')?.checked);const mh=$('mirrorHorizontalGuide');if(mh)mh.classList.toggle('active',!!$('mirrorVToggle')?.checked);refreshDisplayToggleState();}
+function syncSlidersFromColor(){ const h=$('color').value; $('r').value=parseInt(h.slice(1,3),16); $('g').value=parseInt(h.slice(3,5),16); $('b').value=parseInt(h.slice(5,7),16); syncColorFromSliders(); }
+function pos(e, canvas){ const r=canvas.getBoundingClientRect(); return {x:Math.max(0,Math.min(canvas.width-1,Math.floor((e.clientX-r.left)*canvas.width/r.width))), y:Math.max(0,Math.min(canvas.height-1,Math.floor((e.clientY-r.top)*canvas.height/r.height)))}; }
+function normRect(a,b){const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y),w=Math.abs(a.x-b.x)+1,h=Math.abs(a.y-b.y)+1;return {x,y,w,h};}
+function inside(p,r){return r&&p.x>=r.x&&p.y>=r.y&&p.x<r.x+r.w&&p.y<r.y+r.h;}
+
+async function refreshFiles(){try{const r=await api('/api/files');const data=await r.json();$('conn').textContent='server connected';$('fileSelect').innerHTML=data.textures.map(p=>`<option>${p}</option>`).join('');const preferred=data.textures.find(p=>p.includes('terrain_atlas_phase17_generated.png'))||data.textures.find(p=>p.includes('terrain_summer.png'))||data.textures[0];if(preferred){$('fileSelect').value=preferred;await loadAtlas(preferred);}}catch(e){$('conn').textContent='server offline';status('Start tools/asset_lab_server.py from the project root.\n'+e);}}
+async function loadAtlas(path){const img=new Image();img.crossOrigin='anonymous';img.onload=()=>{atlasData.width=img.width;atlasData.height=img.height;atlasDataCtx.clearRect(0,0,img.width,img.height);atlasDataCtx.imageSmoothingEnabled=false;atlasDataCtx.drawImage(img,0,0);atlasView.width=img.width;atlasView.height=img.height;atlasOutput.width=img.width;atlasOutput.height=img.height;selected={x:0,y:0};selectTile(0,0);};img.src='/asset?path='+encodeURIComponent(path)+'&v='+Date.now();}
+function drawAtlasDisplays(){cell=parseInt($('cellSize').value||'32',10);for(const [c,ctx] of [[atlasView,atlasViewCtx],[atlasOutput,atlasOutputCtx]]){c.width=atlasData.width;c.height=atlasData.height;ctx.imageSmoothingEnabled=false;ctx.clearRect(0,0,c.width,c.height);ctx.drawImage(atlasData,0,0);if($('atlasGridToggle').checked){ctx.strokeStyle='rgba(142,199,255,.62)';ctx.lineWidth=1;for(let x=0;x<=c.width;x+=cell){ctx.beginPath();ctx.moveTo(x+.5,0);ctx.lineTo(x+.5,c.height);ctx.stroke();}for(let y=0;y<=c.height;y+=cell){ctx.beginPath();ctx.moveTo(0,y+.5);ctx.lineTo(c.width,y+.5);ctx.stroke();}}ctx.strokeStyle='#8ec7ff';ctx.lineWidth=2;ctx.strokeRect(selected.x*cell+1,selected.y*cell+1,cell-2,cell-2);}}
+function selectTile(tx,ty){selected={x:tx,y:ty};edit.width=cell;edit.height=cell;pix.width=cell;pix.height=cell;ectx.clearRect(0,0,cell,cell);ectx.imageSmoothingEnabled=false;ectx.drawImage(atlasData,tx*cell,ty*cell,cell,cell,0,0,cell,cell);selection=null;floating=null;undoStack=[];redoStack=[];drawAllPreviews();}
+function drawEditor(){pctx.imageSmoothingEnabled=false;pctx.clearRect(0,0,cell,cell);pctx.drawImage(edit,0,0);if(floating&&floating.data){pctx.putImageData(floating.data,floating.x,floating.y);}const r=floating||selection;if(r){pctx.strokeStyle='#fff';pctx.lineWidth=1;pctx.setLineDash([2,2]);pctx.strokeRect(r.x+.5,r.y+.5,r.w,r.h);pctx.setLineDash([]);}updateCanvasOverlays();$('tileInfo').textContent=`Tile ${selected.x},${selected.y} | ${cell}x${cell}`;$('coordReadout').textContent=`${selected.x}, ${selected.y}`;$('toolReadout').textContent=tool;$('selReadout').textContent=selection?`${selection.x},${selection.y} ${selection.w}x${selection.h}`:'none';}
+function drawSelectedPreview(){spctx.imageSmoothingEnabled=false;spctx.clearRect(0,0,128,128);spctx.drawImage(edit,0,0,128,128);}
+function edgeDiff(){const img=ectx.getImageData(0,0,cell,cell).data;let h=0,v=0;for(let y=0;y<cell;y++){for(let k=0;k<3;k++)h+=Math.abs(img[(y*cell+0)*4+k]-img[(y*cell+cell-1)*4+k]);}for(let x=0;x<cell;x++){for(let k=0;k<3;k++)v+=Math.abs(img[(0*cell+x)*4+k]-img[((cell-1)*cell+x)*4+k]);}return {h:Math.round(h/(cell*3)),v:Math.round(v/(cell*3))};}
+function drawSeam(){seamctx.imageSmoothingEnabled=false;seamctx.clearRect(0,0,seam.width,seam.height);const sz=32;for(let y=0;y<3;y++)for(let x=0;x<3;x++)seamctx.drawImage(edit,x*sz,y*sz,sz,sz);seamctx.strokeStyle='rgba(255,255,255,.25)';for(let x=1;x<3;x++){seamctx.beginPath();seamctx.moveTo(x*sz+.5,0);seamctx.lineTo(x*sz+.5,96);seamctx.stroke();}for(let y=1;y<3;y++){seamctx.beginPath();seamctx.moveTo(0,y*sz+.5);seamctx.lineTo(96,y*sz+.5);seamctx.stroke();}const d=edgeDiff();$('seamInfo').innerHTML=`Horizontal edge delta: <b>${d.h}</b><br>Vertical edge delta: <b>${d.v}</b><br><span class="${(d.h+d.v)>45?'warnText':'good'}">${(d.h+d.v)>45?'Likely visible seam if repeated.':'Edges look reasonably smooth for repeated use.'}</span>`;}
+function drawAllPreviews(){drawEditor();drawAtlasDisplays();drawSelectedPreview();drawSeam();}
+function setTool(t){tool=t;for(const id of ['pencilBtn','eraserBtn','fillBtn','pickBtn','selectBtn'])$(id).classList.toggle('active',id.startsWith(t));drawEditor();}
+function samplePixel(x,y){const d=ectx.getImageData(x,y,1,1).data;$('r').value=d[0];$('g').value=d[1];$('b').value=d[2];$('a').value=d[3];syncColorFromSliders();}
+function mirrorPoints(p){const pts=new Map(),mh=!!$('mirrorHToggle')?.checked,mv=!!$('mirrorVToggle')?.checked;const add=(x,y)=>{if(x>=0&&y>=0&&x<cell&&y<cell)pts.set(`${x},${y}`,{x,y});};add(p.x,p.y);if(mh)add(cell-1-p.x,p.y);if(mv)add(p.x,cell-1-p.y);if(mh&&mv)add(cell-1-p.x,cell-1-p.y);return [...pts.values()];}
+function paintAt(p){if(tool==='pick'){samplePixel(p.x,p.y);return;}const points=mirrorPoints(p);if(tool==='fill'){const c=rgba();points.forEach(q=>flood(q.x,q.y,c));return;}const data=ectx.getImageData(0,0,cell,cell), c=tool==='eraser'?[0,0,0,0]:rgba();points.forEach(q=>{const i=(q.y*cell+q.x)*4;data.data[i]=c[0];data.data[i+1]=c[1];data.data[i+2]=c[2];data.data[i+3]=c[3];});ectx.putImageData(data,0,0);}
+function flood(x,y,c){const img=ectx.getImageData(0,0,cell,cell),d=img.data,idx=(y*cell+x)*4,target=[d[idx],d[idx+1],d[idx+2],d[idx+3]];if(target.every((v,i)=>v===c[i]))return;const stack=[[x,y]],seen=new Set();while(stack.length){const [cx,cy]=stack.pop();if(cx<0||cy<0||cx>=cell||cy>=cell)continue;const k=cx+','+cy;if(seen.has(k))continue;seen.add(k);const ii=(cy*cell+cx)*4;if(!target.every((v,i)=>d[ii+i]===v))continue;d[ii]=c[0];d[ii+1]=c[1];d[ii+2]=c[2];d[ii+3]=c[3];stack.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]);}ectx.putImageData(img,0,0);}
+function copySelection(){if(!selection)selection={x:0,y:0,w:cell,h:cell};clipboard=ectx.getImageData(selection.x,selection.y,selection.w,selection.h);status(`Copied ${selection.w}x${selection.h}`);}
+function cutSelection(){copySelection();pushUndo();ectx.clearRect(selection.x,selection.y,selection.w,selection.h);drawAllPreviews();}
+function pasteSelection(){if(!clipboard)return;pushUndo();const x=selection?selection.x:0,y=selection?selection.y:0;ectx.putImageData(clipboard,x,y);selection={x,y,w:clipboard.width,h:clipboard.height};drawAllPreviews();}
+function commitTile(){atlasDataCtx.imageSmoothingEnabled=false;atlasDataCtx.drawImage(edit,selected.x*cell,selected.y*cell);drawAllPreviews();status(`Committed tile ${selected.x},${selected.y} to in-memory atlas. Use Save Atlas PNG to write it.`);}
+async function saveAtlas(){commitTile();const path=$('fileSelect').value;await api('/api/save_png',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,data_url:atlasData.toDataURL('image/png')})});status('Saved atlas: '+path+'\nGame/editor hot reload should pick it up if phase24 live reload is applied.');}
+
+atlasView.onclick=e=>{const p=pos(e,atlasView);selectTile(Math.floor(p.x/cell),Math.floor(p.y/cell));};
+pix.onmousedown=e=>{const p=pos(e,pix);drawing=true;if(tool==='select'){if(e.ctrlKey&&inside(p,selection)){moving=true;floating={...selection,data:ectx.getImageData(selection.x,selection.y,selection.w,selection.h),ox:p.x-selection.x,oy:p.y-selection.y};pushUndo();ectx.clearRect(selection.x,selection.y,selection.w,selection.h);}else{selectStart=p;selection={x:p.x,y:p.y,w:1,h:1};}}else{pushUndo();paintAt(p);}drawAllPreviews();};
+pix.onmousemove=e=>{if(!drawing)return;const p=pos(e,pix);if(tool==='select'){if(moving&&floating){floating.x=Math.max(0,Math.min(cell-floating.w,p.x-floating.ox));floating.y=Math.max(0,Math.min(cell-floating.h,p.y-floating.oy));selection={x:floating.x,y:floating.y,w:floating.w,h:floating.h};}else if(selectStart){selection=normRect(selectStart,p);}}else{paintAt(p);}drawAllPreviews();};
+window.onmouseup=()=>{if(moving&&floating){ectx.putImageData(floating.data,floating.x,floating.y);selection={x:floating.x,y:floating.y,w:floating.w,h:floating.h};floating=null;}drawing=false;moving=false;selectStart=null;drawAllPreviews();};
+function isTypingTarget(el){return el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA'||el.tagName==='SELECT'||el.isContentEditable);}
+function pixelEditorIsVisible(){const tab=$('assetTab');return !tab||tab.classList.contains('active');}
+function toggleCheckbox(id, after){const el=$(id);if(!el)return;el.checked=!el.checked;if(after)after();}
+window.addEventListener('keydown',e=>{
+  if(!pixelEditorIsVisible())return;
+  if(isTypingTarget(document.activeElement))return;
+  const k=e.key.toLowerCase();
+  if(e.ctrlKey||e.metaKey){
+    if(k==='c'){e.preventDefault();copySelection();}
+    else if(k==='x'){e.preventDefault();cutSelection();}
+    else if(k==='v'){e.preventDefault();pasteSelection();}
+    else if(k==='z'){e.preventDefault();undo();}
+    else if(k==='y'){e.preventDefault();redo();}
+    else if(k==='d'){e.preventDefault();selection=null;drawEditor();}
+    else if(k==='s'){e.preventDefault();saveAtlas().catch(err=>status('Save failed: '+(err.message||err)));}
+    return;
+  }
+  if(e.altKey)return;
+  if(k==='b'){e.preventDefault();setTool('pencil');}
+  else if(k==='e'){e.preventDefault();setTool('eraser');}
+  else if(k==='g'&&!e.shiftKey){e.preventDefault();setTool('fill');}
+  else if(k==='i'){e.preventDefault();setTool('pick');}
+  else if(k==='m'){e.preventDefault();setTool('select');}
+  else if(k==='escape'){e.preventDefault();selection=null;floating=null;drawAllPreviews();}
+  else if(k==='h'){e.preventDefault();toggleCheckbox('mirrorHToggle',()=>{updateCanvasOverlays();drawEditor();});}
+  else if(k==='v'){e.preventDefault();toggleCheckbox('mirrorVToggle',()=>{updateCanvasOverlays();drawEditor();});}
+  else if(k==='#'||(k==='g'&&e.shiftKey)){e.preventDefault();toggleCheckbox('gridToggle',()=>{updateCanvasOverlays();drawEditor();});}
+});
+
+$('color').oninput=syncSlidersFromColor;['r','g','b','a'].forEach(id=>$(id).oninput=()=>{syncColorFromSliders();updateSliderOutputs();});$('reloadBtn').onclick=()=>loadAtlas($('fileSelect').value);$('fileSelect').onchange=e=>loadAtlas(e.target.value);$('sliceBtn').onclick=()=>{cell=+$('cellSize').value||32;selectTile(selected.x,selected.y)};$('saveAtlasBtn').onclick=saveAtlas;$('pencilBtn').onclick=()=>setTool('pencil');$('eraserBtn').onclick=()=>setTool('eraser');$('fillBtn').onclick=()=>setTool('fill');$('pickBtn').onclick=()=>setTool('pick');$('selectBtn').onclick=()=>setTool('select');$('copyBtn').onclick=copySelection;$('cutBtn').onclick=cutSelection;$('pasteBtn').onclick=pasteSelection;$('deselectBtn').onclick=()=>{selection=null;drawEditor()};$('undoBtn').onclick=undo;$('redoBtn').onclick=redo;$('clearBtn').onclick=()=>{pushUndo();ectx.clearRect(0,0,cell,cell);drawAllPreviews()};$('commitBtn').onclick=commitTile;$('gridToggle').onchange=()=>{updateCanvasOverlays();drawEditor();};$('atlasGridToggle').onchange=()=>{refreshDisplayToggleState();drawAtlasDisplays();};$('mirrorHToggle').onchange=()=>{updateCanvasOverlays();drawEditor();};$('mirrorVToggle').onchange=()=>{updateCanvasOverlays();drawEditor();};refreshDisplayToggleState();updateSliderOutputs();updateCanvasOverlays();
+
+let frames=[],activeFrame=0,timer=null,pingForward=true;
+function addFrame(){frames.push({data:ectx.getImageData(0,0,cell,cell),ms:+$('frameMs').value||250});activeFrame=frames.length-1;renderFrames();}
+function updateFrame(){if(!frames.length)addFrame();else{frames[activeFrame]={data:ectx.getImageData(0,0,cell,cell),ms:+$('frameMs').value||250};renderFrames();}}
+function loadFrame(i){activeFrame=i;ectx.putImageData(frames[i].data,0,0);$('frameMs').value=frames[i].ms;drawAllPreviews();renderFrames();}
+function duplicateFrame(){if(!frames.length)return;const f=frames[activeFrame];frames.splice(activeFrame+1,0,{data:new ImageData(new Uint8ClampedArray(f.data.data),f.data.width,f.data.height),ms:f.ms});activeFrame++;renderFrames();}
+function deleteFrame(){if(!frames.length)return;frames.splice(activeFrame,1);activeFrame=Math.max(0,Math.min(activeFrame,frames.length-1));renderFrames();}
+function moveFrame(d){const ni=activeFrame+d;if(ni<0||ni>=frames.length)return;[frames[activeFrame],frames[ni]]=[frames[ni],frames[activeFrame]];activeFrame=ni;renderFrames();}
+function renderFrames(){const div=$('frames');div.innerHTML=frames.map((f,i)=>`<button class="frameBtn ${i===activeFrame?'active':''}" onclick="loadFrame(${i})">${i+1}<small>${f.ms}ms</small></button>`).join('');drawStrip();drawAnimFrame();updateRonPreview();}
+window.loadFrame=loadFrame;
+function drawStrip(){const c=$('stripPreview'),ctx=c.getContext('2d');c.width=Math.max(512,frames.length*cell);c.height=cell+24;ctx.imageSmoothingEnabled=false;ctx.clearRect(0,0,c.width,c.height);frames.forEach((f,i)=>{ctx.putImageData(f.data,i*cell,0);ctx.strokeStyle=i===activeFrame?'#8ec7ff':'rgba(255,255,255,.25)';ctx.strokeRect(i*cell+.5,.5,cell-1,cell-1);ctx.fillStyle='#9aa8c0';ctx.font='10px system-ui';ctx.fillText(String(i+1),i*cell+3,cell+14);});}
+function drawAnimFrame(){const c=$('animPreview'),ctx=c.getContext('2d');ctx.imageSmoothingEnabled=false;ctx.clearRect(0,0,c.width,c.height);if(frames.length)ctx.putImageData(frames[activeFrame%frames.length].data,0,0);ctx.drawImage(c,0,0,cell,cell,0,0,c.width,c.height);}
+function play(){stop();if(!frames.length)return;let dir=1;timer=setTimeout(function step(){if($('loopMode').value==='ping_pong'){if(activeFrame===frames.length-1)dir=-1;if(activeFrame===0)dir=1;activeFrame+=dir;}else{activeFrame=(activeFrame+1)%frames.length;}renderFrames();timer=setTimeout(step,frames[activeFrame].ms||250);},frames[activeFrame].ms||250);}
+function stop(){if(timer){clearTimeout(timer);timer=null;}}
+function updateRonPreview(){const durations=frames.map(f=>f.ms);$('animRon').textContent=`(\n    id: "idle_tile_strip",\n    texture: "${$('animPath').value}",\n    frame_width: ${cell},\n    frame_height: ${cell},\n    frames: ${frames.length},\n    fps: ${+$('fps').value||4},\n    frame_durations_ms: [${durations.join(', ')}],\n    loop_mode: "${$('loopMode').value}",\n    random_phase: true,\n)`;}
+async function saveAnim(){if(!frames.length)addFrame();const strip=document.createElement('canvas');strip.width=cell*frames.length;strip.height=cell;const sctx=strip.getContext('2d');frames.forEach((fr,i)=>sctx.putImageData(fr.data,i*cell,0));const path=$('animPath').value;await api('/api/save_png',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,data_url:strip.toDataURL('image/png')})});const ron=path.replace(/\.png$/,'')+'.ron';updateRonPreview();await api('/api/save_text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:ron,text:$('animRon').textContent+'\n'})});status('Saved animation strip: '+path+'\nSaved metadata: '+ron);}
+$('addFrameBtn').onclick=addFrame;$('updateFrameBtn').onclick=updateFrame;$('dupFrameBtn').onclick=duplicateFrame;$('deleteFrameBtn').onclick=deleteFrame;$('leftFrameBtn').onclick=()=>moveFrame(-1);$('rightFrameBtn').onclick=()=>moveFrame(1);$('playBtn').onclick=play;$('stopBtn').onclick=stop;$('saveAnimBtn').onclick=saveAnim;$('frameMs').onchange=()=>{if(frames.length){frames[activeFrame].ms=+$('frameMs').value||250;renderFrames();}};$('loopMode').onchange=updateRonPreview;$('animPath').oninput=updateRonPreview;
+
+const charW=128,charH=48;let charTool='pencil',charLayer='clothing_top';let charLayers={body:null,hair:null,clothing_top:null,clothing_bottom:null,shoes:null,equipment:null};
+function makeLayer(){const c=document.createElement('canvas');c.width=charW;c.height=charH;return c;}
+function resetCharLayers(){for(const k of Object.keys(charLayers))charLayers[k]=makeLayer();renderLayerButtons();drawCharacter();}
+function renderLayerButtons(){const names=Object.keys(charLayers);$('charLayers').innerHTML=names.map(n=>`<button class="${n===charLayer?'active':''}" onclick="setCharLayer('${n}')">${n}</button>`).join('');}
+window.setCharLayer=n=>{charLayer=n;renderLayerButtons();};
+async function loadBody(){resetCharLayers();const img=new Image();img.onload=()=>{const ctx=charLayers.body.getContext('2d');ctx.imageSmoothingEnabled=false;ctx.drawImage(img,0,0);drawCharacter();};img.src='/asset?path='+encodeURIComponent($('bodyTemplate').value)+'&v='+Date.now();}
+function drawCharacter(){const c=$('characterCanvas'),ctx=c.getContext('2d');ctx.imageSmoothingEnabled=false;ctx.clearRect(0,0,c.width,c.height);for(const k of Object.keys(charLayers))ctx.drawImage(charLayers[k],0,0);ctx.strokeStyle='rgba(142,199,255,.35)';for(let x=32;x<charW;x+=32){ctx.beginPath();ctx.moveTo(x+.5,0);ctx.lineTo(x+.5,charH);ctx.stroke();}const z=$('charZoom'),zx=z.getContext('2d');zx.imageSmoothingEnabled=false;zx.clearRect(0,0,z.width,z.height);zx.drawImage(c,0,0,32,48,0,0,256,384);}
+function charPos(e){return pos(e,$('characterCanvas'));}
+function charPaintAt(p){const ctx=charLayers[charLayer].getContext('2d',{willReadFrequently:true});if(charTool==='pick'){const d=ctx.getImageData(p.x,p.y,1,1).data;if(d[3]){$('r').value=d[0];$('g').value=d[1];$('b').value=d[2];$('a').value=d[3];syncColorFromSliders();}return;}if(charTool==='fill'){ctx.fillStyle=cssRgba();ctx.fillRect(p.x,p.y,1,1);return;}ctx.fillStyle=charTool==='eraser'?'rgba(0,0,0,0)':cssRgba();if(charTool==='eraser')ctx.clearRect(p.x,p.y,1,1);else ctx.fillRect(p.x,p.y,1,1);}
+let charDrawing=false;$('characterCanvas').onmousedown=e=>{charDrawing=true;charPaintAt(charPos(e));drawCharacter();};$('characterCanvas').onmousemove=e=>{if(charDrawing){charPaintAt(charPos(e));drawCharacter();}};window.addEventListener('mouseup',()=>charDrawing=false);
+function setCharTool(t){charTool=t;for(const id of ['charPencilBtn','charEraserBtn','charFillBtn','charPickBtn'])$(id).classList.toggle('active',id.toLowerCase().includes(t));}
+async function saveCharacter(){const c=$('characterCanvas');const path=$('charSavePath').value;await api('/api/save_png',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,data_url:c.toDataURL('image/png')})});const ron=path.replace(/\.png$/,'')+'.ron';const text=`(\n    id: "custom_character_composite",\n    texture: "${path}",\n    frame_width: 32,\n    frame_height: 48,\n    directions: ["front", "side", "back", "side"],\n    source_layers: ["body", "hair", "clothing_top", "clothing_bottom", "shoes", "equipment"],\n    non_destructive: true,\n)\n`;await api('/api/save_text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:ron,text})});$('charStatus').textContent='Saved composite: '+path+'\nSaved metadata: '+ron;}
+$('loadBodyBtn').onclick=loadBody;$('resetCharBtn').onclick=resetCharLayers;$('charPencilBtn').onclick=()=>setCharTool('pencil');$('charEraserBtn').onclick=()=>setCharTool('eraser');$('charFillBtn').onclick=()=>setCharTool('fill');$('charPickBtn').onclick=()=>setCharTool('pick');$('charClearLayerBtn').onclick=()=>{charLayers[charLayer].getContext('2d').clearRect(0,0,charW,charH);drawCharacter();};$('saveCharacterBtn').onclick=saveCharacter;
+
+function makeTemplate(name, colors){const c=document.createElement('canvas');c.width=32;c.height=32;const ctx=c.getContext('2d'),img=ctx.createImageData(32,32);for(let y=0;y<32;y++)for(let x=0;x<32;x++){const i=(y*32+x)*4;let col=colors.base;if(colors.type==='grass'&&((x*13+y*7)%29<2))col=colors.detail;if(colors.type==='path'&&((x+y*3)%11<2))col=colors.detail;if(colors.type==='water')col=((x+y+Math.floor(y/4))%9<3)?colors.detail:colors.base;if(colors.type==='sand'&&((x*5+y*2)%17<2))col=colors.detail;if(colors.type==='cliff')col=(y<5||x<3||x>28)?colors.edge:(((x*7+y*5)%19<3)?colors.detail:colors.base);img.data[i]=col[0];img.data[i+1]=col[1];img.data[i+2]=col[2];img.data[i+3]=255;}ctx.putImageData(img,0,0);const d=document.createElement('div');d.className='template';d.appendChild(c);const sp=document.createElement('span');sp.textContent=name;d.appendChild(sp);d.onclick=()=>{cell=32;$('cellSize').value=32;edit.width=32;edit.height=32;pix.width=32;pix.height=32;ectx.clearRect(0,0,32,32);ectx.drawImage(c,0,0);drawAllPreviews();};$('templates').appendChild(d);}
+function initTemplates(){makeTemplate('grass clean',{type:'grass',base:[74,159,57],detail:[99,186,72]});makeTemplate('path dirt',{type:'path',base:[184,139,81],detail:[151,104,57]});makeTemplate('sand beach',{type:'sand',base:[220,194,126],detail:[188,164,100]});makeTemplate('water idle A',{type:'water',base:[48,165,197],detail:[80,205,218]});makeTemplate('cliff edge',{type:'cliff',base:[122,83,51],detail:[91,61,40],edge:[65,45,33]});}
+
+
+// -----------------------------------------------------------------------------
+// Phase 26: Project Browser, Validation, Tileset Roles, and Atlas Export
+// -----------------------------------------------------------------------------
+let allAssets=[], selectedAsset=null;
+
+function fmtBytes(n){if(n<1024)return n+' B';if(n<1024*1024)return (n/1024).toFixed(1)+' KB';return (n/1024/1024).toFixed(2)+' MB';}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+
+async function refreshAssets(){
+  try{
+    const r=await api('/api/assets'); const data=await r.json();
+    allAssets=data.assets||[];
+    const types=[...new Set(allAssets.map(a=>a.type))].sort();
+    $('assetTypeFilter').innerHTML='<option value="">all</option>'+types.map(t=>`<option>${esc(t)}</option>`).join('');
+    renderAssets();
+  }catch(e){$('validationResults').innerHTML=`<div class="issue error">Asset scan failed: ${esc(e.message||e)}</div>`;}
+}
+function renderAssets(){
+  const q=($('assetSearch').value||'').toLowerCase();
+  const t=$('assetTypeFilter').value;
+  const rows=allAssets.filter(a=>(!t||a.type===t)&&(!q||a.path.toLowerCase().includes(q)||a.type.toLowerCase().includes(q)));
+  $('assetList').innerHTML=rows.map((a,i)=>`<div class="assetItem ${selectedAsset&&selectedAsset.path===a.path?'active':''}" onclick="selectAsset('${esc(a.path)}')"><b>${esc(a.name)}</b><small>${esc(a.type)} · ${fmtBytes(a.size)}</small><small>${esc(a.path)}</small></div>`).join('') || '<div class="small">No matching assets.</div>';
+}
+async function selectAsset(path){
+  selectedAsset=allAssets.find(a=>a.path===path)||{path,type:'unknown',used_by:[]};
+  $('assetPath').textContent=selectedAsset.path;
+  $('assetType').textContent=selectedAsset.type||'unknown';
+  $('assetUsedBy').textContent=(selectedAsset.used_by&&selectedAsset.used_by.length)?selectedAsset.used_by.join(', '):'no direct references found';
+  renderAssets();
+  const c=$('assetPreview'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);$('assetTextPreview').textContent='';
+  if(path.toLowerCase().endsWith('.png')){
+    const img=new Image();img.onload=()=>{c.width=img.width;c.height=img.height;ctx.imageSmoothingEnabled=false;ctx.clearRect(0,0,c.width,c.height);ctx.drawImage(img,0,0);};img.src='/asset?path='+encodeURIComponent(path)+'&v='+Date.now();
+  }else{
+    await loadSelectedText();
+  }
+}
+window.selectAsset=selectAsset;
+async function loadSelectedText(){
+  if(!selectedAsset)return;
+  try{const r=await api('/api/read_text?path='+encodeURIComponent(selectedAsset.path));const data=await r.json();$('assetTextPreview').textContent=data.text||'';}
+  catch(e){$('assetTextPreview').textContent='Text preview unavailable: '+(e.message||e);}
+}
+async function openSelectedInAssetLab(){
+  if(!selectedAsset||!selectedAsset.path.toLowerCase().endsWith('.png'))return;
+  let opt=[...$('fileSelect').options].find(o=>o.value===selectedAsset.path);
+  if(!opt){const o=document.createElement('option');o.value=selectedAsset.path;o.textContent=selectedAsset.path;$('fileSelect').appendChild(o);}
+  $('fileSelect').value=selectedAsset.path;
+  await loadAtlas(selectedAsset.path);
+  setTab('assetTab');
+}
+async function runValidation(){
+  try{
+    const r=await api('/api/validate');const data=await r.json();
+    $('validationResults').innerHTML=(data.issues||[]).map(i=>`<div class="issue ${esc(i.level)}"><b>${esc(i.level).toUpperCase()}</b> · ${esc(i.path)}<br>${esc(i.message)}</div>`).join('');
+  }catch(e){$('validationResults').innerHTML=`<div class="issue error">Validation failed: ${esc(e.message||e)}</div>`;}
+}
+
+function mutateImage(fn){pushUndo();const img=ectx.getImageData(0,0,cell,cell);fn(img.data);ectx.putImageData(img,0,0);drawAllPreviews();}
+function copyEdge(src,dst){
+  mutateImage(d=>{
+    for(let i=0;i<cell;i++){
+      let sx=src==='left'?0:src==='right'?cell-1:i, sy=src==='top'?0:src==='bottom'?cell-1:i;
+      let dx=dst==='left'?0:dst==='right'?cell-1:i, dy=dst==='top'?0:dst==='bottom'?cell-1:i;
+      const si=(sy*cell+sx)*4, di=(dy*cell+dx)*4;
+      d[di]=d[si];d[di+1]=d[si+1];d[di+2]=d[si+2];d[di+3]=d[si+3];
+    }
+  });
+}
+function blendOppositeEdges(axis){
+  mutateImage(d=>{
+    for(let i=0;i<cell;i++){
+      const a=axis==='h'?(i*cell+0)*4:(0*cell+i)*4;
+      const b=axis==='h'?(i*cell+cell-1)*4:((cell-1)*cell+i)*4;
+      for(let k=0;k<4;k++){const v=Math.round((d[a+k]+d[b+k])/2);d[a+k]=v;d[b+k]=v;}
+    }
+  });
+}
+function softenBorder(){
+  mutateImage(d=>{
+    const src=new Uint8ClampedArray(d);
+    function avg(x,y,ix,iy){const a=(y*cell+x)*4,b=(iy*cell+ix)*4;for(let k=0;k<3;k++)d[a+k]=Math.round(src[a+k]*0.55+src[b+k]*0.45);}
+    for(let x=0;x<cell;x++){avg(x,0,x,1);avg(x,cell-1,x,cell-2);}
+    for(let y=0;y<cell;y++){avg(0,y,1,y);avg(cell-1,y,cell-2,y);}
+  });
+}
+
+async function exportExtrudedFromCanvas(srcCanvas,outPath,tileSize,pad){
+  const cols=Math.floor(srcCanvas.width/tileSize), rows=Math.floor(srcCanvas.height/tileSize);
+  const out=document.createElement('canvas');out.width=cols*(tileSize+pad*2);out.height=rows*(tileSize+pad*2);
+  const o=out.getContext('2d');o.imageSmoothingEnabled=false;o.clearRect(0,0,out.width,out.height);
+  for(let ty=0;ty<rows;ty++)for(let tx=0;tx<cols;tx++){
+    const sx=tx*tileSize, sy=ty*tileSize, dx=tx*(tileSize+pad*2)+pad, dy=ty*(tileSize+pad*2)+pad;
+    o.drawImage(srcCanvas,sx,sy,tileSize,tileSize,dx,dy,tileSize,tileSize);
+    o.drawImage(srcCanvas,sx,sy,tileSize,1,dx,dy-pad,tileSize,pad);
+    o.drawImage(srcCanvas,sx,sy+tileSize-1,tileSize,1,dx,dy+tileSize,tileSize,pad);
+    o.drawImage(srcCanvas,sx,sy,1,tileSize,dx-pad,dy,pad,tileSize);
+    o.drawImage(srcCanvas,sx+tileSize-1,sy,1,tileSize,dx+tileSize,dy,pad,tileSize);
+    o.drawImage(srcCanvas,sx,sy,1,1,dx-pad,dy-pad,pad,pad);
+    o.drawImage(srcCanvas,sx+tileSize-1,sy,1,1,dx+tileSize,dy-pad,pad,pad);
+    o.drawImage(srcCanvas,sx,sy+tileSize-1,1,1,dx-pad,dy+tileSize,pad,pad);
+    o.drawImage(srcCanvas,sx+tileSize-1,sy+tileSize-1,1,1,dx+tileSize,dy+tileSize,pad,pad);
+  }
+  await api('/api/save_png',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:outPath,data_url:out.toDataURL('image/png')})});
+  return {path:outPath,width:out.width,height:out.height,cols,rows,pad};
+}
+async function exportCurrentRuntimeAtlas(){
+  commitTile();
+  const current=$('fileSelect').value||'assets/textures/terrain_atlas_phase17_generated.png';
+  const suggested=current.replace(/\.png$/,'_runtime_padded.png').replace('/textures/','/textures/runtime/');
+  const outPath=prompt('Save padded runtime atlas as:',suggested);
+  if(!outPath)return;
+  const result=await exportExtrudedFromCanvas(atlasData,outPath,cell,2);
+  status(`Exported runtime-safe atlas: ${result.path}\nSize: ${result.width}x${result.height}\nPadding: ${result.pad}px around every tile.`);
+}
+
+let roleData=null, roleEntries=[], roleSelected=0, roleAtlasCanvas=document.createElement('canvas'), roleAtlasCtx=roleAtlasCanvas.getContext('2d');
+const roleDefaults={
+  grass:{collision:'walkable',walkable:true,blocks_movement:false,water:false,interactable:false,crop_soil:false,door:false},
+  path:{collision:'walkable',walkable:true,blocks_movement:false,water:false,interactable:false,crop_soil:false,door:false},
+  sand:{collision:'walkable',walkable:true,blocks_movement:false,water:false,interactable:false,crop_soil:false,door:false},
+  shore:{collision:'water',walkable:false,blocks_movement:true,water:true,interactable:false,crop_soil:false,door:false},
+  water:{collision:'water',walkable:false,blocks_movement:true,water:true,interactable:false,crop_soil:false,door:false},
+  cliff:{collision:'blocked',walkable:false,blocks_movement:true,water:false,interactable:false,crop_soil:false,door:false},
+  crop_soil:{collision:'crop_soil',walkable:true,blocks_movement:false,water:false,interactable:true,crop_soil:true,door:false},
+  door:{collision:'door',walkable:true,blocks_movement:false,water:false,interactable:true,crop_soil:false,door:true},
+  blocking_prop:{collision:'blocked',walkable:false,blocks_movement:true,water:false,interactable:false,crop_soil:false,door:false},
+  fence:{collision:'blocked',walkable:false,blocks_movement:true,water:false,interactable:false,crop_soil:false,door:false},
+  wall:{collision:'blocked',walkable:false,blocks_movement:true,water:false,interactable:false,crop_soil:false,door:false},
+  building:{collision:'blocked',walkable:false,blocks_movement:true,water:false,interactable:false,crop_soil:false,door:false},
+  stone:{collision:'walkable',walkable:true,blocks_movement:false,water:false,interactable:false,crop_soil:false,door:false},
+  wood:{collision:'walkable',walkable:true,blocks_movement:false,water:false,interactable:false,crop_soil:false,door:false},
+  decor:{collision:'decor_only',walkable:true,blocks_movement:false,water:false,interactable:false,crop_soil:false,door:false}
+};
+function roleDefault(role){return roleDefaults[role]||roleDefaults.decor;}
+async function loadTileRoles(){
+  const path=$('tilesetPath').value||'content/tiles/base_tileset.ron';
+  const r=await api('/api/tile_roles?path='+encodeURIComponent(path)); roleData=await r.json(); roleEntries=roleData.entries||[]; roleSelected=0;
+  $('roleSidecar').textContent=roleData.roles_path||'none';
+  const img=new Image(); img.onload=()=>{roleAtlasCanvas.width=img.width;roleAtlasCanvas.height=img.height;roleAtlasCtx.imageSmoothingEnabled=false;roleAtlasCtx.clearRect(0,0,img.width,img.height);roleAtlasCtx.drawImage(img,0,0);drawRoleAtlas();selectRoleIndex(0);};
+  img.src='/asset?path='+encodeURIComponent(roleData.tileset.texture_path)+'&v='+Date.now();
+  renderRoleRows();
+}
+function drawRoleAtlas(){
+  if(!roleData)return;
+  const c=$('roleAtlas'),ctx=c.getContext('2d'),tw=roleData.tileset.tile_width||32,th=roleData.tileset.tile_height||32;
+  c.width=roleAtlasCanvas.width;c.height=roleAtlasCanvas.height;ctx.imageSmoothingEnabled=false;ctx.clearRect(0,0,c.width,c.height);ctx.drawImage(roleAtlasCanvas,0,0);
+  ctx.strokeStyle='rgba(142,199,255,.28)';ctx.lineWidth=1;
+  for(let x=0;x<=c.width;x+=tw){ctx.beginPath();ctx.moveTo(x+.5,0);ctx.lineTo(x+.5,c.height);ctx.stroke();}
+  for(let y=0;y<=c.height;y+=th){ctx.beginPath();ctx.moveTo(0,y+.5);ctx.lineTo(c.width,y+.5);ctx.stroke();}
+  const e=roleEntries[roleSelected]; if(e){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.strokeRect(e.x*tw+1,e.y*th+1,tw-2,th-2);}
+}
+function renderRoleRows(){
+  if(!roleEntries.length){$('roleRows').innerHTML='<div class="small">No tiles loaded.</div>';return;}
+  const q=($('roleSearch').value||'').toLowerCase();
+  $('roleRows').innerHTML=roleEntries.map((e,i)=>({e,i})).filter(({e})=>!q||e.tile_id.toLowerCase().includes(q)||e.role.toLowerCase().includes(q)||e.collision.toLowerCase().includes(q)).map(({e,i})=>`<div class="roleRow ${i===roleSelected?'active':''}" onclick="selectRoleIndex(${i})"><b>${esc(e.tile_id)}</b><span>${e.x},${e.y}</span><span>${esc(e.role)}</span><span>${esc(e.collision)}</span></div>`).join('');
+}
+function selectRoleIndex(i){
+  if(!roleEntries.length)return; applyRoleForm(false); roleSelected=Math.max(0,Math.min(i,roleEntries.length-1)); const e=roleEntries[roleSelected];
+  $('roleTileId').textContent=e.tile_id;$('roleCoord').textContent=`${e.x}, ${e.y}`;$('roleSelect').value=e.role||'decor';$('collisionSelect').value=e.collision||'walkable';
+  $('roleWalkable').checked=!!e.walkable;$('roleBlocks').checked=!!e.blocks_movement;$('roleWater').checked=!!e.water;$('roleInteract').checked=!!e.interactable;$('roleCrop').checked=!!e.crop_soil;$('roleDoor').checked=!!e.door;
+  drawRoleAtlas();renderRoleRows();
+}
+window.selectRoleIndex=selectRoleIndex;
+function applyRoleDefaultsToForm(){const d=roleDefault($('roleSelect').value);$('collisionSelect').value=d.collision;$('roleWalkable').checked=d.walkable;$('roleBlocks').checked=d.blocks_movement;$('roleWater').checked=d.water;$('roleInteract').checked=d.interactable;$('roleCrop').checked=d.crop_soil;$('roleDoor').checked=d.door;}
+function applyRoleForm(redraw=true){
+  if(!roleEntries.length)return;
+  const e=roleEntries[roleSelected]; if(!e)return;
+  e.role=$('roleSelect').value;e.collision=$('collisionSelect').value;e.walkable=$('roleWalkable').checked;e.blocks_movement=$('roleBlocks').checked;e.water=$('roleWater').checked;e.interactable=$('roleInteract').checked;e.crop_soil=$('roleCrop').checked;e.door=$('roleDoor').checked;
+  if(redraw){renderRoleRows();drawRoleAtlas();$('roleStatus').textContent=`Applied ${e.tile_id}: ${e.role} / ${e.collision}`;}
+}
+async function saveTileRoles(){applyRoleForm(false);const payload={source:$('tilesetPath').value,entries:roleEntries};const r=await api('/api/save_tile_roles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const data=await r.json();$('roleStatus').textContent=`Saved ${data.entries} role entries to ${data.path}`;refreshAssets();runValidation();}
+async function exportRoleRuntimeAtlas(){
+  if(!roleData||!roleAtlasCanvas.width){$('roleStatus').textContent='Load tile roles first.';return;}
+  const pad=parseInt($('extrudePad').value||'2',10),tw=roleData.tileset.tile_width||32;
+  const result=await exportExtrudedFromCanvas(roleAtlasCanvas,$('extrudePath').value,tw,pad);
+  $('roleStatus').textContent=`Exported padded atlas: ${result.path}\nSize: ${result.width}x${result.height}\nEach ${tw}x${tw} tile has ${pad}px extruded edges.`;
+  refreshAssets();
+}
+$('roleAtlas').onclick=e=>{if(!roleData)return;const p=pos(e,$('roleAtlas')),tw=roleData.tileset.tile_width||32,th=roleData.tileset.tile_height||32;const tx=Math.floor(p.x/tw),ty=Math.floor(p.y/th);const idx=roleEntries.findIndex(r=>r.x===tx&&r.y===ty);if(idx>=0)selectRoleIndex(idx);};
+
+
+
+// Phase 33 browser World Preview / Map Editor prototype
+let worldMaps=[], worldData=null, worldTileset=null, worldTileEntries=[], worldTileById=new Map(), worldRoleById=new Map();
+let worldAtlasImg=null, worldActiveLayer=0, worldSelectedCell=null, worldPaintTileId=null, worldPaintMode=false, worldZoom=1;
+function worldStatus(t){const el=$('worldStatus'); if(el) el.textContent=t;}
+async function loadWorldMaps(){
+  const r=await api('/api/maps'); const data=await r.json(); worldMaps=data.maps||[];
+  const sel=$('worldMapSelect'); if(!sel) return;
+  const prev=sel.value; sel.innerHTML=worldMaps.map(m=>`<option value="${esc(m.id)}">${esc(m.display_name||m.id)} (${esc(m.id)})</option>`).join('');
+  sel.value=prev || (worldMaps.find(m=>m.id==='starter_farm')?.id || worldMaps[0]?.id || '');
+  if(!worldData && sel.value) await loadWorld(sel.value);
+}
+async function ensureWorldTileset(){
+  const r=await api('/api/tile_roles?path=content/tiles/base_tileset.ron'); const data=await r.json();
+  worldTileset=data.tileset; worldTileEntries=data.entries||[]; worldTileById=new Map(); worldRoleById=new Map();
+  worldTileEntries.forEach(e=>{worldTileById.set(e.tile_id,e); worldRoleById.set(e.tile_id,e);});
+  const psel=$('worldPaintTile'); if(psel){psel.innerHTML=worldTileEntries.map(e=>`<option value="${esc(e.tile_id)}">${esc(e.tile_id)} (${e.x},${e.y})</option>`).join(''); if(!worldPaintTileId && worldTileEntries[0]) worldPaintTileId=worldTileEntries[0].tile_id; psel.value=worldPaintTileId||'';}
+  worldAtlasImg=await loadImage('/asset?path='+encodeURIComponent(worldTileset.texture_path)+'&v='+Date.now());
+}
+function loadImage(src){return new Promise((resolve,reject)=>{const img=new Image(); img.crossOrigin='anonymous'; img.onload=()=>resolve(img); img.onerror=reject; img.src=src;});}
+async function loadWorld(id){
+  await ensureWorldTileset();
+  const r=await api('/api/map_layers?map='+encodeURIComponent(id)); worldData=await r.json(); worldActiveLayer=0; worldSelectedCell=null;
+  renderWorldLayerButtons(); renderWorldLegend(); drawWorld(); worldStatus(`Loaded ${worldData.map_id}: ${worldData.width}x${worldData.height}. Right-click a tile to edit.`);
+}
+function activeWorldLayer(){return worldData?.layers?.[worldActiveLayer]||null;}
+function renderWorldLayerButtons(){
+  const box=$('worldLayerButtons'); if(!box||!worldData)return;
+  box.innerHTML=worldData.layers.map((l,i)=>`<button class="mapLayerBtn ${i===worldActiveLayer?'active':''}" onclick="setWorldLayer(${i})">${esc(l.id)} ${l.visible?'visible':'hidden'} ${l.rows?.length||0} rows</button>`).join('');
+}
+window.setWorldLayer=function(i){worldActiveLayer=i; renderWorldLayerButtons(); renderWorldLegend(); drawWorld();};
+function renderWorldLegend(){
+  const box=$('worldLegendList'), layer=activeWorldLayer(); if(!box||!layer){return;}
+  box.innerHTML=(layer.legend||[]).map(e=>`<div class="legendRow"><span class="legendSym">${esc(e.symbol)}</span><span>${esc(e.tile_id)}</span><button onclick="setWorldPaintTile('${esc(e.tile_id)}')">Paint</button></div>`).join('') || '<div class="small">No legend entries.</div>';
+}
+window.setWorldPaintTile=function(tileId){worldPaintTileId=tileId; const p=$('worldPaintTile'); if(p) p.value=tileId; updateWorldReadouts();};
+function drawWorld(){
+  const c=$('worldCanvas'); if(!c||!worldData||!worldAtlasImg||!worldTileset)return; const ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=false;
+  const tw=worldData.tile_width||32, th=worldData.tile_height||32; c.width=(worldData.width||40)*tw*worldZoom; c.height=(worldData.height||28)*th*worldZoom;
+  ctx.clearRect(0,0,c.width,c.height); ctx.save(); ctx.scale(worldZoom,worldZoom);
+  for(const [li,layer] of worldData.layers.entries()){
+    if(!layer.visible) continue; if(li!==worldActiveLayer && layer.id!=='ground' && !$('worldObjectToggle')?.checked) continue;
+    const alpha=li===worldActiveLayer?1:0.82; ctx.globalAlpha=alpha;
+    const legend=symbolMap(layer);
+    for(let y=0;y<layer.rows.length;y++){
+      const row=layer.rows[y]||'';
+      for(let x=0;x<row.length;x++){
+        const sym=row[x]; if(sym==='.'||sym===' ') continue;
+        const tileId=legend.get(sym); const tile=worldTileById.get(tileId); if(!tile) continue;
+        ctx.drawImage(worldAtlasImg,tile.x*tw,tile.y*th,tw,th,x*tw,y*th,tw,th);
+        if($('worldCollisionToggle')?.checked){const role=worldRoleById.get(tileId); if(role?.blocks_movement||role?.water){ctx.fillStyle=role.water?'rgba(60,160,255,.20)':'rgba(255,80,80,.20)';ctx.fillRect(x*tw,y*th,tw,th);}}
+      }
+    }
+  }
+  ctx.globalAlpha=1;
+  if($('worldGridToggle')?.checked){ctx.strokeStyle='rgba(142,199,255,.18)';ctx.lineWidth=1; for(let x=0;x<=worldData.width;x++){ctx.beginPath();ctx.moveTo(x*tw+.5,0);ctx.lineTo(x*tw+.5,worldData.height*th);ctx.stroke();} for(let y=0;y<=worldData.height;y++){ctx.beginPath();ctx.moveTo(0,y*th+.5);ctx.lineTo(worldData.width*tw,y*th+.5);ctx.stroke();}}
+  if(worldSelectedCell){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.strokeRect(worldSelectedCell.x*tw+1,worldSelectedCell.y*th+1,tw-2,th-2);}
+  ctx.restore(); updateWorldReadouts();
+}
+function symbolMap(layer){const m=new Map(); (layer.legend||[]).forEach(e=>m.set(e.symbol,e.tile_id)); return m;}
+function selectedWorldInfo(){
+  const layer=activeWorldLayer(); if(!layer||!worldSelectedCell)return null; const {x,y}=worldSelectedCell; const row=layer.rows[y]||''; const sym=row[x]||'.'; const tileId=symbolMap(layer).get(sym)||''; return {layer,x,y,sym,tileId,tile:worldTileById.get(tileId)};
+}
+function updateWorldReadouts(){
+  const info=selectedWorldInfo(); const paint=worldPaintTileId || $('worldPaintTile')?.value || 'none';
+  if($('worldPaintReadout')) $('worldPaintReadout').textContent=paint; if($('worldSourceReadout')) $('worldSourceReadout').textContent=selected?`asset cell ${selected.x},${selected.y}`:'none';
+  if($('worldCellReadout')) $('worldCellReadout').textContent=info?`${info.layer.id} ${info.x},${info.y} ${info.tileId||info.sym}`:'none';
+  if($('worldInfoLayer')) $('worldInfoLayer').textContent=info?.layer.id||'-'; if($('worldInfoXY')) $('worldInfoXY').textContent=info?`${info.x}, ${info.y}`:'-'; if($('worldInfoSymbol')) $('worldInfoSymbol').textContent=info?.sym||'-'; if($('worldInfoTile')) $('worldInfoTile').textContent=info?.tileId||'-';
+  drawWorldTilePreview(info);
+}
+function drawWorldTilePreview(info){const c=$('worldTilePreview'); if(!c)return; const ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=false; ctx.clearRect(0,0,c.width,c.height); if(info?.tile&&worldAtlasImg){const tw=worldTileset.tile_width||32,th=worldTileset.tile_height||32;ctx.drawImage(worldAtlasImg,info.tile.x*tw,info.tile.y*th,tw,th,0,0,c.width,c.height);}}
+function worldCanvasCell(ev){const c=$('worldCanvas'),p=pos(ev,c),tw=(worldData.tile_width||32)*worldZoom,th=(worldData.tile_height||32)*worldZoom;return {x:Math.floor(p.x/tw),y:Math.floor(p.y/th)};}
+function showWorldMenu(ev){const menu=$('worldContextMenu'); if(!menu)return; menu.style.left=ev.clientX+'px'; menu.style.top=ev.clientY+'px'; menu.style.display='block';}
+function hideWorldMenu(){const menu=$('worldContextMenu'); if(menu) menu.style.display='none';}
+function setWorldCellTile(x,y,tileId){
+  const layer=activeWorldLayer(); if(!layer||!tileId)return false; if(y<0||y>=layer.rows.length)return false; const width=worldData.width||layer.rows[y].length; if(x<0||x>=width)return false;
+  let entry=(layer.legend||[]).find(e=>e.tile_id===tileId); if(!entry){const sym=nextLegendSymbol(layer); if(!sym){worldStatus('No free one-character legend symbols left for this layer.');return false;} entry={symbol:sym,tile_id:tileId}; layer.legend.push(entry); renderWorldLegend();}
+  const row=(layer.rows[y]||'').padEnd(width,'.'); layer.rows[y]=row.slice(0,x)+entry.symbol+row.slice(x+1); drawWorld(); return true;
+}
+function nextLegendSymbol(layer){const used=new Set((layer.legend||[]).map(e=>e.symbol)); const chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&*+=?@^~'; for(const ch of chars) if(!used.has(ch) && ch!=='.') return ch; return null;}
+function selectedAssetTileId(){const e=worldTileEntries.find(t=>t.x===selected.x&&t.y===selected.y); return e?.tile_id || null;}
+function replaceSelectedWorldTile(){const info=selectedWorldInfo(); const tileId=worldPaintTileId || $('worldPaintTile')?.value || selectedAssetTileId(); if(!info){worldStatus('Select a world cell first.');return;} if(!tileId){worldStatus('Pick a paint tile first.');return;} setWorldCellTile(info.x,info.y,tileId); worldStatus(`Set ${info.layer.id} ${info.x},${info.y} to ${tileId}. Save map to persist.`);}
+function openWorldTileInAsset(){const info=selectedWorldInfo(); if(!info?.tile){worldStatus('Selected world cell has no named source tile.');return;} setTab('assetTab'); selectTile(info.tile.x,info.tile.y); status(`Opened source tile from world cell ${info.x},${info.y}: ${info.tileId}`);}
+function cloneWorldTileToAsset(){const info=selectedWorldInfo(); if(!info?.tile){worldStatus('No tile to clone.');return;} setTab('assetTab'); selectTile(info.tile.x,info.tile.y); status(`Loaded ${info.tileId} as clone source. Edit it, then commit/save atlas. Save-as-new-variant metadata wiring is next.`);}
+async function saveWorld(){if(!worldData){worldStatus('No map loaded.');return;} const r=await api('/api/save_map_layers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(worldData)}); const data=await r.json(); worldStatus(`Saved ${data.path}. ${data.layers} layers written.`);}
+async function saveWorldAndReload(){await saveWorld(); await api('/api/hot_reload_manifest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:'web world editor save',map:worldData?.map_id||''})}); worldStatus('Saved map and updated artifacts/editor_live_preview.ron for hot reload.');}
+function worldMenuAction(action){
+  hideWorldMenu();
+  if(action==='inspect'){const info=selectedWorldInfo(); worldStatus(info?`Inspect ${info.layer.id} ${info.x},${info.y}: ${info.tileId||info.sym}`:'No tile selected.');}
+  if(action==='replace') replaceSelectedWorldTile();
+  if(action==='openAsset') openWorldTileInAsset();
+  if(action==='cloneAsset') cloneWorldTileToAsset();
+  if(action==='paintMode'){const info=selectedWorldInfo(); if(info?.tileId){worldPaintTileId=info.tileId; const p=$('worldPaintTile'); if(p)p.value=info.tileId; worldStatus(`Paint source set to ${info.tileId}.`); updateWorldReadouts();}}
+}
+function setupWorldEvents(){
+  const c=$('worldCanvas'); if(!c)return;
+  c.onclick=ev=>{if(!worldData)return; const cellPos=worldCanvasCell(ev); worldSelectedCell=cellPos; if(worldPaintMode) replaceSelectedWorldTile(); drawWorld();};
+  c.oncontextmenu=ev=>{ev.preventDefault(); if(!worldData)return; worldSelectedCell=worldCanvasCell(ev); drawWorld(); showWorldMenu(ev);};
+  document.addEventListener('click',ev=>{if(!ev.target.closest('#worldContextMenu') && ev.target!==c) hideWorldMenu();});
+  $('worldContextMenu')?.querySelectorAll('button').forEach(b=>b.onclick=()=>worldMenuAction(b.dataset.action));
+}
+
+$('refreshAssetsBtn').onclick=refreshAssets;$('assetSearch').oninput=renderAssets;$('assetTypeFilter').onchange=renderAssets;$('openAssetLabBtn').onclick=openSelectedInAssetLab;$('openTextAssetBtn').onclick=loadSelectedText;$('runValidationBtn').onclick=runValidation;
+$('edgeLtoRBtn').onclick=()=>copyEdge('left','right');$('edgeRtoLBtn').onclick=()=>copyEdge('right','left');$('edgeTtoBBtn').onclick=()=>copyEdge('top','bottom');$('edgeBtoTBtn').onclick=()=>copyEdge('bottom','top');$('blendHBtn').onclick=()=>blendOppositeEdges('h');$('blendVBtn').onclick=()=>blendOppositeEdges('v');$('softBorderBtn').onclick=softenBorder;$('exportCurrentAtlasBtn').onclick=exportCurrentRuntimeAtlas;
+$('loadTileRolesBtn').onclick=loadTileRoles;$('saveTileRolesBtn').onclick=saveTileRoles;$('applyRoleBtn').onclick=()=>applyRoleForm(true);$('roleDefaultsBtn').onclick=applyRoleDefaultsToForm;$('roleSearch').oninput=renderRoleRows;$('roleSelect').onchange=applyRoleDefaultsToForm;$('exportRoleAtlasBtn').onclick=exportRoleRuntimeAtlas;
+
+
+
+if($('loadWorldBtn')) $('loadWorldBtn').onclick=()=>loadWorld($('worldMapSelect').value);
+if($('reloadWorldBtn')) $('reloadWorldBtn').onclick=()=>loadWorld($('worldMapSelect').value);
+if($('saveWorldBtn')) $('saveWorldBtn').onclick=saveWorld;
+if($('saveWorldAndReloadBtn')) $('saveWorldAndReloadBtn').onclick=saveWorldAndReload;
+if($('replaceWorldTileBtn')) $('replaceWorldTileBtn').onclick=replaceSelectedWorldTile;
+if($('openWorldTileInAssetBtn')) $('openWorldTileInAssetBtn').onclick=openWorldTileInAsset;
+if($('cloneWorldTileBtn')) $('cloneWorldTileBtn').onclick=cloneWorldTileToAsset;
+if($('useAssetTileBtn')) $('useAssetTileBtn').onclick=()=>{const tid=selectedAssetTileId(); if(tid){worldPaintTileId=tid; if($('worldPaintTile')) $('worldPaintTile').value=tid; worldStatus(`Paint source set from Asset Lab: ${tid}`); updateWorldReadouts();}else worldStatus('Current Asset Lab tile is not a named tileset entry.');};
+if($('paintModeBtn')) $('paintModeBtn').onclick=()=>{worldPaintMode=!worldPaintMode; $('paintModeBtn').textContent=worldPaintMode?'Paint Mode On':'Paint Mode Off'; $('paintModeBtn').classList.toggle('active',worldPaintMode);};
+if($('worldPaintTile')) $('worldPaintTile').onchange=()=>{worldPaintTileId=$('worldPaintTile').value; updateWorldReadouts();};
+if($('worldGridToggle')) $('worldGridToggle').onchange=drawWorld;
+if($('worldObjectToggle')) $('worldObjectToggle').onchange=drawWorld;
+if($('worldCollisionToggle')) $('worldCollisionToggle').onchange=drawWorld;
+if($('zoomInWorldBtn')) $('zoomInWorldBtn').onclick=()=>{worldZoom=Math.min(4,worldZoom+.25); $('worldZoomReadout').textContent=Math.round(worldZoom*100)+'%'; drawWorld();};
+if($('zoomOutWorldBtn')) $('zoomOutWorldBtn').onclick=()=>{worldZoom=Math.max(.25,worldZoom-.25); $('worldZoomReadout').textContent=Math.round(worldZoom*100)+'%'; drawWorld();};
+if($('worldFitBtn')) $('worldFitBtn').onclick=()=>{worldZoom=1; $('worldZoomReadout').textContent='100%'; drawWorld();};
+setupWorldEvents();
+
+syncColorFromSliders();resetCharLayers();refreshFiles();refreshAssets();runValidation();loadTileRoles();updateRonPreview();
+</script>
+</body>
+</html>

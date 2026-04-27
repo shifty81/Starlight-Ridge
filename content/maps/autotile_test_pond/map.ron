@@ -1,0 +1,9 @@
+(
+    id: "autotile_test_pond",
+    display_name: "Autotile Test Pond",
+    width: 32,
+    height: 24,
+    tileset: "base_tiles",
+    music: Some("farm_day"),
+    ambient_light: 0.9,
+)

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Starlight Ridge Atlas Pipeline Editor</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Starlight Ridge Atlas Pipeline</h1>
+      <p>Phase 21 scaffold: atlas contracts, export/validation/autotile data, and animation timeline events, sockets, hitboxes, water previews, and seasonal variants.</p>
+    </div>
+    <div class="status-pill" id="pipeline-status">Loading pipeline...</div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <h2>Atlases</h2>
+      <div id="atlas-list" class="nav-list"></div>
+
+      <h2>Preview Mode</h2>
+      <label class="field-label" for="season-select">Season</label>
+      <select id="season-select"></select>
+
+      <label class="toggle-row"><input id="toggle-grid" type="checkbox" checked /> Black pixel grid</label>
+      <label class="toggle-row"><input id="toggle-center" type="checkbox" checked /> Red center guides</label>
+      <label class="toggle-row"><input id="toggle-game-preview" type="checkbox" /> Game preview mode</label>
+    </aside>
+
+    <section class="workspace">
+      <section class="panel hero-panel">
+        <div>
+          <h2 id="active-atlas-title">Atlas</h2>
+          <p id="active-atlas-meta"></p>
+        </div>
+        <div class="tool-strip">
+          <button id="mirror-h">Mirror H</button>
+          <button id="mirror-v">Mirror V</button>
+          <button id="paste-tool">Paste Tool</button>
+          <button id="validate-map">Validate</button>
+          <button id="export-pack">Export Dry Run</button>
+        </div>
+      </section>
+
+      <section class="panel atlas-panel">
+        <canvas id="atlas-canvas" width="704" height="416" aria-label="Atlas preview canvas"></canvas>
+      </section>
+
+      <section class="panel-grid">
+        <section class="panel">
+          <h2>Season Variant Assignment</h2>
+          <div id="season-table" class="table-like"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Water Animation Metadata</h2>
+          <div id="water-list" class="card-list"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Clipboard / Paste Tools</h2>
+          <div id="clipboard-list" class="card-list"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Validation Panel</h2>
+          <div id="validation-list" class="card-list"></div>
+        </section>
+
+        <section class="panel wide">
+          <h2>Export Pack Builder</h2>
+          <div id="export-list" class="card-list"></div>
+        </section>
+
+        <section class="panel wide">
+          <h2>Autotile Rule Sets</h2>
+          <div id="autotile-list" class="card-list"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Collision / Interaction Profiles</h2>
+          <div id="collision-list" class="card-list"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Atlas Cleanup Manifest</h2>
+          <div id="cleanup-list" class="card-list"></div>
+        </section>
+
+        <section class="panel wide animation-panel">
+          <h2>Animation Timeline</h2>
+          <div id="animation-timeline-list" class="timeline-list"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Frame Events</h2>
+          <div id="animation-event-list" class="card-list"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Sockets / Hitboxes</h2>
+          <div id="socket-hitbox-list" class="card-list"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Water Animation Preview</h2>
+          <div id="water-preview-list" class="card-list"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Seasonal Animation Sets</h2>
+          <div id="seasonal-animation-list" class="card-list"></div>
+        </section>
+
+        <section class="panel wide">
+          <h2>Animation Validation Report</h2>
+          <div id="animation-validation-list" class="card-list"></div>
+        </section>
+      </section>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

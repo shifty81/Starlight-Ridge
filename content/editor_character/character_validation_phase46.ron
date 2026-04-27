@@ -1,0 +1,23 @@
+(
+    id: "character_validation_phase46",
+    display_name: "Character Studio Live Validation Contract",
+    notes: [
+        "Validates mannequin frame size classes against world block height.",
+        "Validates paperdoll overlay frame parity before export.",
+        "Validates per-frame foot anchors and tool sockets exist for authored clips.",
+        "Phase 46A fixes the immediate egui selectable_label warning and adds this validation contract scaffold."
+    ],
+    required_scale_classes: [
+        (id: "child_1_block", world_blocks: 1.0, frame_size: (32, 32)),
+        (id: "teen_1_5_block", world_blocks: 1.5, frame_size: (32, 48)),
+        (id: "adult_2_block", world_blocks: 2.0, frame_size: (32, 64)),
+        (id: "tall_rig_2_25_block", world_blocks: 2.25, frame_size: (48, 72)),
+    ],
+    parity_checks: [
+        "base_body_frames_match_overlay_frames",
+        "overlay_sheet_dimensions_match_declared_frame_size",
+        "foot_anchor_exists_for_each_directional_frame",
+        "tool_socket_exists_for_tool_use_frames",
+        "paperdoll_slot_offsets_have_default_and_per_frame_override_path",
+    ],
+)

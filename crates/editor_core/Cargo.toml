@@ -1,0 +1,16 @@
+[package]
+name = "editor_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+log.workspace = true
+game_world = { path = "../game_world" }
+game_data = { path = "../game_data" }
+editor_tools = { path = "../editor_tools" }
+editor_inspector = { path = "../editor_inspector" }
+editor_undo = { path = "../editor_undo" }
+editor_data_bridge = { path = "../editor_data_bridge" }

@@ -1,0 +1,24 @@
+(
+    version: "phase48",
+    workflow: [
+        "create_new_scene",
+        "select_scene_template",
+        "choose_seed_size_and_rules",
+        "generate_semantic_scene",
+        "run_autotile_resolver",
+        "open_generated_draft_in_editor",
+        "custom_edit_layers",
+        "bake_to_normal_scene",
+    ],
+    protected_layer_policy: (
+        regeneratable: ["base_terrain", "terrain_variation", "natural_objects", "water_shape"],
+        protected: ["buildings", "npc_spawns", "quest_triggers", "doors", "scene_exits", "logic_bindings", "custom_objects"],
+    ),
+    editor_preview_panels: [
+        "semantic_layer_preview",
+        "autotile_handoff_preview",
+        "object_spawn_preview",
+        "protected_layer_report",
+        "bake_validation_report",
+    ],
+)

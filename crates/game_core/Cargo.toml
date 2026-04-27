@@ -1,0 +1,21 @@
+[package]
+name = "game_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+log.workspace = true
+game_world = { path = "../game_world" }
+game_entities = { path = "../game_entities" }
+game_inventory = { path = "../game_inventory" }
+game_farming = { path = "../game_farming" }
+game_combat = { path = "../game_combat" }
+game_npc = { path = "../game_npc" }
+game_quests = { path = "../game_quests" }
+game_dialogue = { path = "../game_dialogue" }
+game_economy = { path = "../game_economy" }
+game_save = { path = "../game_save" }
+game_data = { path = "../game_data" }
