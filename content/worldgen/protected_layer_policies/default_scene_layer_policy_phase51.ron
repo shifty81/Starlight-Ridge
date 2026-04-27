@@ -1,0 +1,36 @@
+(
+    id: "default_scene_layer_policy",
+    regeneratable_layers: [
+        "semantic_terrain",
+        "base_terrain",
+        "terrain_variation",
+        "terrain_transitions",
+        "water",
+        "water_animation",
+        "shoreline_foam",
+        "paths",
+        "natural_objects",
+    ],
+    protected_layers: [
+        "placed_objects",
+        "buildings",
+        "interactions",
+        "spawns",
+        "triggers",
+        "exits",
+        "lighting",
+        "audio_zones",
+        "logic_bindings",
+        "decals",
+    ],
+    derived_layers: [
+        "collision",
+        "navigation_hints",
+        "minimap_preview",
+    ],
+    notes: [
+        "Generation may refresh draft terrain and natural cleanup objects.",
+        "Authored gameplay/story layers must be preserved during regeneration.",
+        "Derived layers are rebuildable from terrain, object, and rule metadata.",
+    ],
+)

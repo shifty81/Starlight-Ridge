@@ -1,7 +1,9 @@
 use crate::defs::{
-    BiomePackDef, CropDef, DialogueDef, EditorAtlasPipelineCatalogDef, EditorAnimationPipelineDef, EditorExportValidationPipelineDef, ItemDef, MapBundle,
-    MapLayersDef, NpcDef, QuestDef, ScheduleDef, ShopDef, SpriteSheetDef, TerrainRulesetDef,
-    TerrainTypeDef, TilesetDef, TransitionSetDef,
+    BiomePackDef, CropDef, DialogueDef, EditorAtlasPipelineCatalogDef, EditorAnimationPipelineDef,
+    EditorExportValidationPipelineDef, GeneratedSceneDraftDef, HeightMapDef, HybridWorldEditorPipelineDef, ItemDef, LightingProfileDef, MapBundle, MapLayersDef,
+    NpcDef, PresentationDef, ProtectedLayerPolicyDef, QuestDef, Scene3DDef, SceneBakeContractDef, ScheduleDef, ShopDef,
+    SpriteSheetDef, TerrainRulesetDef, TerrainTypeDef, TilesetDef, TransitionSetDef, WorldManifestDef,
+    WorldgenEditorWorkflowDef,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -20,6 +22,10 @@ pub struct ContentRegistry {
     pub tilesets: HashMap<String, TilesetDef>,
     pub sprite_sheets: HashMap<String, SpriteSheetDef>,
     pub map_layers: HashMap<String, MapLayersDef>,
+    pub map_height_maps: HashMap<String, HeightMapDef>,
+    pub map_scene3d: HashMap<String, Scene3DDef>,
+    pub map_presentations: HashMap<String, PresentationDef>,
+    pub map_lighting_profiles: HashMap<String, LightingProfileDef>,
     pub terrain_types: HashMap<String, TerrainTypeDef>,
     pub biome_packs: HashMap<String, BiomePackDef>,
     pub transition_sets: HashMap<String, TransitionSetDef>,
@@ -27,12 +33,18 @@ pub struct ContentRegistry {
     pub editor_atlas_pipelines: HashMap<String, EditorAtlasPipelineCatalogDef>,
     pub editor_export_pipelines: HashMap<String, EditorExportValidationPipelineDef>,
     pub editor_animation_pipelines: HashMap<String, EditorAnimationPipelineDef>,
+    pub hybrid_world_editor_pipelines: HashMap<String, HybridWorldEditorPipelineDef>,
+    pub world_manifests: HashMap<String, WorldManifestDef>,
+    pub worldgen_editor_workflows: HashMap<String, WorldgenEditorWorkflowDef>,
+    pub protected_layer_policies: HashMap<String, ProtectedLayerPolicyDef>,
+    pub generated_scene_drafts: HashMap<String, GeneratedSceneDraftDef>,
+    pub scene_bake_contracts: HashMap<String, SceneBakeContractDef>,
 }
 
 impl ContentRegistry {
     pub fn summary(&self) -> String {
         format!(
-            "items={} crops={} npcs={} schedules={} dialogues={} quests={} shops={} maps={} tilesets={} sprite_sheets={} map_layers={} terrain_types={} biome_packs={} transition_sets={} terrain_rulesets={} editor_atlas_pipelines={} editor_export_pipelines={} editor_animation_pipelines={}",
+            "items={} crops={} npcs={} schedules={} dialogues={} quests={} shops={} maps={} tilesets={} sprite_sheets={} map_layers={} height_maps={} scene3d={} presentations={} lighting_profiles={} terrain_types={} biome_packs={} transition_sets={} terrain_rulesets={} editor_atlas_pipelines={} editor_export_pipelines={} editor_animation_pipelines={} hybrid_world_pipelines={} world_manifests={} worldgen_editor_workflows={} protected_layer_policies={} generated_scene_drafts={} scene_bake_contracts={}",
             self.items.len(),
             self.crops.len(),
             self.npcs.len(),
@@ -44,6 +56,10 @@ impl ContentRegistry {
             self.tilesets.len(),
             self.sprite_sheets.len(),
             self.map_layers.len(),
+            self.map_height_maps.len(),
+            self.map_scene3d.len(),
+            self.map_presentations.len(),
+            self.map_lighting_profiles.len(),
             self.terrain_types.len(),
             self.biome_packs.len(),
             self.transition_sets.len(),
@@ -51,6 +67,12 @@ impl ContentRegistry {
             self.editor_atlas_pipelines.len(),
             self.editor_export_pipelines.len(),
             self.editor_animation_pipelines.len(),
+            self.hybrid_world_editor_pipelines.len(),
+            self.world_manifests.len(),
+            self.worldgen_editor_workflows.len(),
+            self.protected_layer_policies.len(),
+            self.generated_scene_drafts.len(),
+            self.scene_bake_contracts.len(),
         )
     }
 
@@ -71,5 +93,27 @@ impl ContentRegistry {
             || !self.biome_packs.is_empty()
             || !self.transition_sets.is_empty()
             || !self.terrain_rulesets.is_empty()
+    }
+
+    pub fn has_phase51i_hybrid_world_contracts(&self) -> bool {
+        !self.map_height_maps.is_empty()
+            || !self.map_scene3d.is_empty()
+            || !self.map_presentations.is_empty()
+            || !self.map_lighting_profiles.is_empty()
+            || !self.hybrid_world_editor_pipelines.is_empty()
+    }
+
+    pub fn has_phase51_world_contracts(&self) -> bool {
+        !self.world_manifests.is_empty()
+            || !self.worldgen_editor_workflows.is_empty()
+            || !self.protected_layer_policies.is_empty()
+            || !self.generated_scene_drafts.is_empty()
+            || !self.scene_bake_contracts.is_empty()
+    }
+
+    pub fn active_world_manifest(&self) -> Option<&WorldManifestDef> {
+        self.world_manifests
+            .get("starlight_ridge_world")
+            .or_else(|| self.world_manifests.values().next())
     }
 }

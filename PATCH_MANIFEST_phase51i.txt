@@ -1,0 +1,23 @@
+Starlight Ridge Phase 51i — Hybrid 2D/3D World Authoring Scaffold
+
+Changed:
+- crates/game_data/src/defs.rs
+- crates/game_data/src/loader.rs
+- crates/game_data/src/registry.rs
+- crates/game_data/src/lib.rs
+- crates/app/src/egui_editor.rs
+
+Added:
+- content/maps/starter_farm/height.ron
+- content/maps/starter_farm/scene3d.ron
+- content/maps/starter_farm/presentation.ron
+- content/maps/starter_farm/lighting.ron
+- content/editor_hybrid_world/hybrid_world_pipeline_phase51i.ron
+- docs/patches/README_PATCH_PHASE51I_HYBRID_2D_3D_WORLD_AUTHORING.md
+
+Expected result:
+- cargo check should continue to pass.
+- Editor opens with a Render main tab.
+- World tab includes Height / Elevation, 3D Scene Layout, Camera / Presentation, Lighting / Time, Weather, and WorldGen scaffolds.
+- Project dashboard shows hybrid world contract counts.
+- Existing 2D Map Paint behavior remains intact.

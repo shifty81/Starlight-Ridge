@@ -1,0 +1,14 @@
+(
+    map_id: "starter_farm",
+    width: 40,
+    height: 28,
+    cell_size: 1.0,
+    default_height: 0,
+    min_height: -4,
+    max_height: 8,
+    values: [],
+    notes: [
+        "Phase 51i scaffold: empty values mean every cell uses default_height until the Height / Elevation editor writes explicit values.",
+        "Gameplay remains grid-authored; this layer adds terrain depth for 2.5D/3D presentation and future slope/cliff tooling.",
+    ],
+)

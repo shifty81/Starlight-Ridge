@@ -6,7 +6,7 @@ use anyhow::Context;
 use eframe::egui;
 use engine_assets::vox::{scan_vox_files, VoxAssetInfo};
 use engine_render_gl::{TileInstance, TileMapRenderData};
-use game_data::defs::{TilesetDef, TileLayerDef};
+use game_data::defs::{LayerLegendEntry, MapLayersDef, TileLayerDef, TilesetDef};
 use game_data::registry::ContentRegistry;
 
 use super::{
@@ -55,6 +55,7 @@ enum WorkspaceTab {
     Project,
     World,
     Assets,
+    Render,
     Animation,
     Character,
     Logic,
@@ -68,7 +69,11 @@ enum AssetSubTab {
     TerrainAtlas,
     AtlasCompare,
     PixelEditor,
+    SpriteSheets,
     Voxels,
+    BlockbenchModels,
+    BlenderSources,
+    MaterialsPalettes,
     Props,
     Seasons,
 }
@@ -77,6 +82,12 @@ enum AssetSubTab {
 enum WorldSubTab {
     MapPaint,
     Layers,
+    HeightElevation,
+    SceneLayout3D,
+    CameraPresentation,
+    LightingTime,
+    Weather,
+    WorldGen,
     Interactions,
     Spawns,
     TerrainRules,
@@ -90,6 +101,18 @@ enum LogicSubTab {
     Blocks,
     Validation,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RenderSubTab {
+    Viewport3D,
+    ScenePreview,
+    SpriteBake,
+    IconBake,
+    LightingStudio,
+    CameraPresets,
+    RenderJobs,
+}
+
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -248,7 +271,7 @@ impl PixelEditorState {
             texture.set(image, egui::TextureOptions::NEAREST);
         } else {
             self.texture = Some(ctx.load_texture(
-                "phase51e_pixel_editor_atlas_texture",
+                "phase51h_pixel_editor_atlas_texture",
                 image,
                 egui::TextureOptions::NEAREST,
             ));
@@ -302,7 +325,7 @@ impl PixelEditorState {
             let backup_path = self
                 .image_path
                 .with_file_name(format!(
-                    "{}.phase51e.{}.bak.png",
+                    "{}.phase51h.{}.bak.png",
                     self.image_path
                         .file_stem()
                         .and_then(|stem| stem.to_str())
@@ -757,6 +780,150 @@ impl PixelEditorState {
             }
         }
     }
+
+}
+
+#[derive(Debug, Clone)]
+struct EditorMapState {
+    map_id: String,
+    layers_path: PathBuf,
+    layers: MapLayersDef,
+    selected_layer_index: usize,
+    selected_symbol: char,
+    dirty: bool,
+    last_painted_cell: Option<(u32, u32)>,
+}
+
+impl EditorMapState {
+    fn load(project_root: &std::path::Path, map_id: &str) -> anyhow::Result<Self> {
+        let layers_path = map_layers_path(project_root, map_id);
+        let layers = game_data::loader::load_map_layers(&layers_path)
+            .with_context(|| format!("failed to load editable layers for map '{map_id}'"))?;
+        let selected_layer_index = layers
+            .layers
+            .iter()
+            .position(|layer| layer.visible)
+            .unwrap_or(0);
+        let selected_symbol = layers
+            .layers
+            .get(selected_layer_index)
+            .and_then(|layer| layer.legend.first())
+            .and_then(|entry| entry.symbol.chars().next())
+            .unwrap_or('.');
+
+        Ok(Self {
+            map_id: map_id.to_string(),
+            layers_path,
+            layers,
+            selected_layer_index,
+            selected_symbol,
+            dirty: false,
+            last_painted_cell: None,
+        })
+    }
+
+    fn selected_layer(&self) -> Option<&TileLayerDef> {
+        self.layers.layers.get(self.selected_layer_index)
+    }
+
+    fn selected_layer_mut(&mut self) -> Option<&mut TileLayerDef> {
+        self.layers.layers.get_mut(self.selected_layer_index)
+    }
+
+    fn selected_layer_id(&self) -> String {
+        self.selected_layer()
+            .map(|layer| layer.id.clone())
+            .unwrap_or_else(|| "<none>".to_string())
+    }
+
+    fn select_layer_by_id(&mut self, layer_id: &str) {
+        if let Some(index) = self.layers.layers.iter().position(|layer| layer.id == layer_id) {
+            self.selected_layer_index = index;
+            self.selected_symbol = self
+                .selected_layer()
+                .and_then(|layer| layer.legend.first())
+                .and_then(|entry| entry.symbol.chars().next())
+                .unwrap_or('.');
+        }
+    }
+}
+
+fn map_layers_path(project_root: &std::path::Path, map_id: &str) -> PathBuf {
+    project_root
+        .join("content")
+        .join("maps")
+        .join(map_id)
+        .join("layers.ron")
+}
+
+fn layer_symbol_for_tile(layer: &TileLayerDef, tile_id: &str) -> Option<char> {
+    layer
+        .legend
+        .iter()
+        .find(|entry| entry.tile_id == tile_id)
+        .and_then(|entry| entry.symbol.chars().next())
+}
+
+fn layer_tile_for_symbol(layer: &TileLayerDef, symbol: char) -> Option<String> {
+    layer
+        .legend
+        .iter()
+        .find(|entry| entry.symbol.chars().next() == Some(symbol))
+        .map(|entry| entry.tile_id.clone())
+}
+
+fn layer_symbol_at(layer: &TileLayerDef, x: usize, y: usize) -> Option<char> {
+    layer.rows.get(y)?.chars().nth(x)
+}
+
+fn set_layer_symbol_at(layer: &mut TileLayerDef, x: usize, y: usize, symbol: char) -> bool {
+    let Some(row) = layer.rows.get_mut(y) else {
+        return false;
+    };
+    let mut chars = row.chars().collect::<Vec<_>>();
+    let Some(cell) = chars.get_mut(x) else {
+        return false;
+    };
+    if *cell == symbol {
+        return false;
+    }
+    *cell = symbol;
+    *row = chars.into_iter().collect();
+    true
+}
+
+fn allocate_layer_symbol(layer: &TileLayerDef) -> Option<char> {
+    let used = layer
+        .legend
+        .iter()
+        .filter_map(|entry| entry.symbol.chars().next())
+        .collect::<std::collections::HashSet<_>>();
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@$%^&*+=?:;~"
+        .chars()
+        .find(|candidate| *candidate != '.' && !used.contains(candidate))
+}
+
+fn layer_dimensions(layers: &MapLayersDef) -> (u32, u32) {
+    let width = layers
+        .layers
+        .iter()
+        .flat_map(|layer| layer.rows.iter())
+        .map(|row| row.chars().count() as u32)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    let height = layers
+        .layers
+        .iter()
+        .map(|layer| layer.rows.len() as u32)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    (width, height)
+}
+
+fn is_empty_layer_symbol(symbol: char) -> bool {
+    symbol == '.' || symbol == ' '
 }
 
 fn pixel_editor_texture_path(
@@ -819,6 +986,8 @@ struct StarlightRidgeEguiEditor {
     registry: ContentRegistry,
     active_map_id: String,
     tile_map: Option<TileMapRenderData>,
+    editor_map: Option<EditorMapState>,
+    map_brush_size: u32,
     selected_tool: usize,
     selected_asset_index: usize,
     selected_tile_id: String,
@@ -832,6 +1001,7 @@ struct StarlightRidgeEguiEditor {
     asset_subtab: AssetSubTab,
     world_subtab: WorldSubTab,
     logic_subtab: LogicSubTab,
+    render_subtab: RenderSubTab,
     tile_filter: String,
     status: String,
     log_lines: Vec<String>,
@@ -850,6 +1020,13 @@ impl StarlightRidgeEguiEditor {
         let selected_tile_id = default_selected_tile(&registry).unwrap_or_else(|| "grass_bright".to_string());
         let selected_cell = atlas_cell_for_tile(&registry, &selected_tile_id).unwrap_or((0, 0));
         let role_state = load_tile_role_state(&project_root, &selected_tile_id);
+        let editor_map = match EditorMapState::load(&project_root, &active_map_id) {
+            Ok(state) => Some(state),
+            Err(error) => {
+                log::warn!("failed to load mutable egui map state: {error:#}");
+                None
+            }
+        };
         let pixel_editor = PixelEditorState::load_for_active_tileset(&project_root, &registry, &active_map_id);
         let vox_assets = match scan_vox_files(&project_root) {
             Ok(assets) => assets,
@@ -864,6 +1041,8 @@ impl StarlightRidgeEguiEditor {
             registry,
             active_map_id,
             tile_map,
+            editor_map,
+            map_brush_size: 1,
             selected_tool: 0,
             selected_asset_index: 0,
             selected_tile_id,
@@ -877,6 +1056,7 @@ impl StarlightRidgeEguiEditor {
             asset_subtab: AssetSubTab::TerrainAtlas,
             world_subtab: WorldSubTab::MapPaint,
             logic_subtab: LogicSubTab::Graphs,
+            render_subtab: RenderSubTab::ScenePreview,
             tile_filter: String::new(),
             status: "egui editor ready. Native GL overlay is no longer the editor UI path.".to_string(),
             log_lines: Vec::new(),
@@ -911,7 +1091,398 @@ impl StarlightRidgeEguiEditor {
             .or_else(|| self.registry.tilesets.values().next())
     }
 
+    fn load_editor_map_state(&mut self, preferred_layer_id: Option<&str>, preferred_symbol: Option<char>) {
+        match EditorMapState::load(&self.project_root, &self.active_map_id) {
+            Ok(mut state) => {
+                if let Some(layer_id) = preferred_layer_id {
+                    state.select_layer_by_id(layer_id);
+                }
+                if let Some(symbol) = preferred_symbol {
+                    state.selected_symbol = symbol;
+                }
+                self.editor_map = Some(state);
+                self.sync_selected_symbol_to_tile();
+            }
+            Err(error) => {
+                self.editor_map = None;
+                self.log(format!("Editable map layer load error: {error:#}"));
+            }
+        }
+    }
+
+    fn sync_selected_symbol_to_tile(&mut self) {
+        let tile_id = self.selected_tile_id.clone();
+        if let Some(state) = self.editor_map.as_mut() {
+            if let Some(layer) = state.selected_layer() {
+                if let Some(symbol) = layer_symbol_for_tile(layer, &tile_id) {
+                    state.selected_symbol = symbol;
+                }
+            }
+        }
+    }
+
+    fn ensure_selected_symbol_for_paint(&mut self) -> Option<char> {
+        let tile_id = self.selected_tile_id.clone();
+        let result = {
+            let state = self.editor_map.as_mut()?;
+            let layer = state.selected_layer_mut()?;
+            if let Some(symbol) = layer_symbol_for_tile(layer, &tile_id) {
+                Some((symbol, false))
+            } else if let Some(symbol) = allocate_layer_symbol(layer) {
+                layer.legend.push(LayerLegendEntry {
+                    symbol: symbol.to_string(),
+                    tile_id: tile_id.clone(),
+                });
+                Some((symbol, true))
+            } else {
+                None
+            }
+        }?;
+
+        if let Some(state) = self.editor_map.as_mut() {
+            state.selected_symbol = result.0;
+            if result.1 {
+                state.dirty = true;
+                self.status = format!(
+                    "Added layer legend symbol '{}' for tile {} on layer {}.",
+                    result.0,
+                    tile_id,
+                    state.selected_layer_id()
+                );
+            }
+        }
+
+        Some(result.0)
+    }
+
+    fn save_active_map_layers(&mut self) {
+        let Some(state) = self.editor_map.as_ref() else {
+            self.status = "No editable map layers are loaded.".to_string();
+            self.log(self.status.clone());
+            return;
+        };
+
+        let path = state.layers_path.clone();
+        let layers = state.layers.clone();
+        match game_data::loader::save_map_layers_with_backup(&path, &layers) {
+            Ok(backup_path) => {
+                if let Some(state) = self.editor_map.as_mut() {
+                    state.dirty = false;
+                }
+                let backup_note = backup_path
+                    .as_ref()
+                    .map(|path| format!(" Backup: {}.", path.display()))
+                    .unwrap_or_else(|| " No previous layers.ron existed, so no backup was written.".to_string());
+                let _ = write_editor_live_preview_manifest(&self.project_root, &self.active_map_id);
+                self.reload_content();
+                self.status = format!("Saved editable map layers to {}.{}", path.display(), backup_note);
+                self.log(self.status.clone());
+            }
+            Err(error) => {
+                self.status = "Failed to save editable map layers.".to_string();
+                self.log(format!("Map layer save error: {error:#}"));
+            }
+        }
+    }
+
+    fn active_map_dimensions(&self) -> (u32, u32) {
+        let metadata_dims = self
+            .registry
+            .maps
+            .get(&self.active_map_id)
+            .map(|map| (map.metadata.width.max(1), map.metadata.height.max(1)))
+            .unwrap_or((1, 1));
+        if let Some(state) = &self.editor_map {
+            let layer_dims = layer_dimensions(&state.layers);
+            (metadata_dims.0.max(layer_dims.0), metadata_dims.1.max(layer_dims.1))
+        } else if let Some(tile_map) = &self.tile_map {
+            (metadata_dims.0.max(tile_map.map_width), metadata_dims.1.max(tile_map.map_height))
+        } else {
+            metadata_dims
+        }
+    }
+
+    fn tile_color_from_id(&self, tile_id: &str) -> egui::Color32 {
+        let resolved_tile_id = self
+            .registry
+            .terrain_types
+            .get(tile_id)
+            .map(|terrain| terrain.fallback_tile_id.as_str())
+            .unwrap_or(tile_id);
+
+        if let Some((atlas_x, atlas_y)) = self
+            .active_tileset()
+            .and_then(|tileset| {
+                tileset
+                    .named_tiles
+                    .iter()
+                    .find(|entry| entry.id == resolved_tile_id)
+                    .map(|entry| (entry.x, entry.y))
+            })
+        {
+            color_for_tile(&TileInstance {
+                x: 0,
+                y: 0,
+                atlas_x,
+                atlas_y,
+            })
+        } else {
+            egui::Color32::from_rgb(205, 74, 120)
+        }
+    }
+
+    fn paint_symbol_at_current_layer(&mut self, x: u32, y: u32, symbol: char) -> usize {
+        let size = self.map_brush_size.max(1) as i32;
+        let start = -(size / 2);
+        let mut changed = 0usize;
+        if let Some(state) = self.editor_map.as_mut() {
+            if let Some(layer) = state.selected_layer_mut() {
+                for dy in 0..size {
+                    for dx in 0..size {
+                        let px = x as i32 + start + dx;
+                        let py = y as i32 + start + dy;
+                        if px < 0 || py < 0 {
+                            continue;
+                        }
+                        if set_layer_symbol_at(layer, px as usize, py as usize, symbol) {
+                            changed += 1;
+                        }
+                    }
+                }
+            }
+            if changed > 0 {
+                state.dirty = true;
+            }
+        }
+        changed
+    }
+
+    fn fill_current_layer(&mut self, x: u32, y: u32, replacement: char) -> usize {
+        let mut changed = 0usize;
+        if let Some(state) = self.editor_map.as_mut() {
+            if let Some(layer) = state.selected_layer_mut() {
+                let Some(target) = layer_symbol_at(layer, x as usize, y as usize) else {
+                    return 0;
+                };
+                if target == replacement {
+                    return 0;
+                }
+                let width = layer.rows.iter().map(|row| row.chars().count()).max().unwrap_or(0);
+                let height = layer.rows.len();
+                let mut queue = std::collections::VecDeque::new();
+                let mut visited = std::collections::HashSet::new();
+                queue.push_back((x as usize, y as usize));
+
+                while let Some((cx, cy)) = queue.pop_front() {
+                    if cx >= width || cy >= height || !visited.insert((cx, cy)) {
+                        continue;
+                    }
+                    if layer_symbol_at(layer, cx, cy) != Some(target) {
+                        continue;
+                    }
+                    if set_layer_symbol_at(layer, cx, cy, replacement) {
+                        changed += 1;
+                    }
+                    if cx > 0 {
+                        queue.push_back((cx - 1, cy));
+                    }
+                    if cy > 0 {
+                        queue.push_back((cx, cy - 1));
+                    }
+                    queue.push_back((cx + 1, cy));
+                    queue.push_back((cx, cy + 1));
+                }
+            }
+            if changed > 0 {
+                state.dirty = true;
+            }
+        }
+        changed
+    }
+
+    fn pick_from_current_layer(&mut self, x: u32, y: u32) {
+        let picked = self
+            .editor_map
+            .as_ref()
+            .and_then(|state| state.selected_layer())
+            .and_then(|layer| {
+                let symbol = layer_symbol_at(layer, x as usize, y as usize)?;
+                if is_empty_layer_symbol(symbol) {
+                    return None;
+                }
+                layer_tile_for_symbol(layer, symbol).map(|tile_id| (symbol, tile_id))
+            });
+
+        if let Some((symbol, tile_id)) = picked {
+            if let Some(state) = self.editor_map.as_mut() {
+                state.selected_symbol = symbol;
+            }
+            self.select_tile(tile_id, "Map pick");
+            self.status = format!("Picked '{}' / {} from {},{}.", symbol, self.selected_tile_id, x, y);
+        } else {
+            self.status = format!("No mapped tile on selected layer at {},{}.", x, y);
+        }
+    }
+
+    fn apply_map_tool_at_cell(&mut self, x: u32, y: u32, clicked: bool) {
+        self.selected_map_cell = Some((x, y));
+        match self.selected_tool {
+            2 => {
+                if let Some(symbol) = self.ensure_selected_symbol_for_paint() {
+                    let changed = self.paint_symbol_at_current_layer(x, y, symbol);
+                    if changed > 0 {
+                        self.status = format!(
+                            "Painted {} cell(s) with '{}' / {} on layer {}.",
+                            changed,
+                            symbol,
+                            self.selected_tile_id,
+                            self.editor_map
+                                .as_ref()
+                                .map(|state| state.selected_layer_id())
+                                .unwrap_or_else(|| "<none>".to_string())
+                        );
+                    }
+                } else {
+                    self.status = "Could not allocate a layer legend symbol for the selected tile.".to_string();
+                }
+            }
+            3 => {
+                let changed = self.paint_symbol_at_current_layer(x, y, '.');
+                if changed > 0 {
+                    self.status = format!("Erased {} cell(s) on layer {}.", changed, self.editor_map.as_ref().map(|state| state.selected_layer_id()).unwrap_or_else(|| "<none>".to_string()));
+                }
+            }
+            4 if clicked => {
+                if let Some(symbol) = self.ensure_selected_symbol_for_paint() {
+                    let changed = self.fill_current_layer(x, y, symbol);
+                    self.status = format!("Filled {} cell(s) with '{}' / {}.", changed, symbol, self.selected_tile_id);
+                }
+            }
+            5 if clicked => self.pick_from_current_layer(x, y),
+            _ if clicked => {
+                if let Some(tile_id) = self.tile_id_at_map_cell(x, y) {
+                    self.select_tile(tile_id, "World preview");
+                } else {
+                    self.status = format!("Selected empty map cell {x},{y}.");
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn map_layer_validation_issues(&self) -> Vec<String> {
+        let mut issues = Vec::new();
+        let Some(state) = &self.editor_map else {
+            issues.push(format!("map '{}' has no editable layers.ron loaded", self.active_map_id));
+            return issues;
+        };
+
+        if state.layers.map_id != self.active_map_id {
+            issues.push(format!(
+                "layers.ron map_id '{}' does not match active map '{}'",
+                state.layers.map_id,
+                self.active_map_id
+            ));
+        }
+        if state.layers.tile_width == 0 || state.layers.tile_height == 0 {
+            issues.push(format!(
+                "layers.ron has invalid tile size {}x{}",
+                state.layers.tile_width,
+                state.layers.tile_height
+            ));
+        }
+        if state.layers.layers.is_empty() {
+            issues.push("layers.ron contains no layers".to_string());
+        }
+
+        let Some(map) = self.registry.maps.get(&self.active_map_id) else {
+            issues.push(format!("active map '{}' is missing map.ron metadata", self.active_map_id));
+            return issues;
+        };
+        let expected_width = map.metadata.width as usize;
+        let expected_height = map.metadata.height as usize;
+        let known_tiles = self
+            .active_tileset()
+            .map(|tileset| {
+                tileset
+                    .named_tiles
+                    .iter()
+                    .map(|entry| entry.id.as_str())
+                    .collect::<std::collections::HashSet<_>>()
+            })
+            .unwrap_or_default();
+
+        for layer in &state.layers.layers {
+            if layer.rows.len() != expected_height {
+                issues.push(format!(
+                    "layer '{}' has {} rows but map height is {}",
+                    layer.id,
+                    layer.rows.len(),
+                    expected_height
+                ));
+            }
+
+            let mut legend_symbols = std::collections::HashSet::new();
+            for legend in &layer.legend {
+                let chars = legend.symbol.chars().collect::<Vec<_>>();
+                if chars.len() != 1 {
+                    issues.push(format!(
+                        "layer '{}' legend symbol '{}' must be exactly one character",
+                        layer.id,
+                        legend.symbol
+                    ));
+                    continue;
+                }
+                if !legend_symbols.insert(chars[0]) {
+                    issues.push(format!("layer '{}' duplicates legend symbol '{}'", layer.id, chars[0]));
+                }
+                if !known_tiles.contains(legend.tile_id.as_str())
+                    && !self.registry.terrain_types.contains_key(&legend.tile_id)
+                {
+                    issues.push(format!(
+                        "layer '{}' symbol '{}' references missing tile/terrain '{}'",
+                        layer.id,
+                        legend.symbol,
+                        legend.tile_id
+                    ));
+                }
+            }
+
+            for (row_index, row) in layer.rows.iter().enumerate() {
+                let row_width = row.chars().count();
+                if row_width != expected_width {
+                    issues.push(format!(
+                        "layer '{}' row {} width is {} but map width is {}",
+                        layer.id,
+                        row_index,
+                        row_width,
+                        expected_width
+                    ));
+                }
+                for (x, symbol) in row.chars().enumerate() {
+                    if is_empty_layer_symbol(symbol) {
+                        continue;
+                    }
+                    if !legend_symbols.contains(&symbol) {
+                        issues.push(format!(
+                            "layer '{}' uses unmapped symbol '{}' at {},{}",
+                            layer.id,
+                            symbol,
+                            x,
+                            row_index
+                        ));
+                    }
+                }
+            }
+        }
+
+        issues
+    }
+
     fn reload_content(&mut self) {
+        let selected_layer_id = self.editor_map.as_ref().map(|state| state.selected_layer_id());
+        let selected_symbol = self.editor_map.as_ref().map(|state| state.selected_symbol);
+
         match scan_vox_files(&self.project_root) {
             Ok(assets) => {
                 self.vox_assets = assets;
@@ -927,10 +1498,11 @@ impl StarlightRidgeEguiEditor {
         match game_data::load_registry(&self.project_root) {
             Ok(registry) => {
                 self.registry = registry;
+                self.load_editor_map_state(selected_layer_id.as_deref(), selected_symbol);
                 match build_tile_map_render_data(&self.project_root, &self.registry, &self.active_map_id) {
                     Ok(tile_map) => {
                         self.tile_map = tile_map;
-                        self.status = "Reloaded content and rebuilt egui preview.".to_string();
+                        self.status = "Reloaded content, map layers, and rebuilt egui preview.".to_string();
                         self.log(self.status.clone());
                     }
                     Err(error) => {
@@ -953,10 +1525,12 @@ impl StarlightRidgeEguiEditor {
 
         self.active_map_id = map_id;
         self.selected_map_cell = None;
+        self.load_editor_map_state(None, None);
         match build_tile_map_render_data(&self.project_root, &self.registry, &self.active_map_id) {
             Ok(tile_map) => {
                 self.tile_map = tile_map;
                 let _ = write_editor_live_preview_manifest(&self.project_root, &self.active_map_id);
+                self.pixel_editor = PixelEditorState::load_for_active_tileset(&self.project_root, &self.registry, &self.active_map_id);
                 self.status = format!("Switched map to {}.", self.active_map_id);
                 self.log(self.status.clone());
             }
@@ -971,6 +1545,7 @@ impl StarlightRidgeEguiEditor {
         self.selected_tile_id = tile_id;
         self.selected_cell = atlas_cell_for_tile(&self.registry, &self.selected_tile_id).unwrap_or(self.selected_cell);
         self.role_state = load_tile_role_state(&self.project_root, &self.selected_tile_id);
+        self.sync_selected_symbol_to_tile();
         self.status = format!("{source} selected tile {} at atlas {},{}.", self.selected_tile_id, self.selected_cell.0, self.selected_cell.1);
         self.log(self.status.clone());
     }
@@ -1104,15 +1679,21 @@ impl StarlightRidgeEguiEditor {
                     return;
                 }
                 if input.key_pressed(egui::Key::S) {
-                    match self.pixel_editor.save_png_with_backup() {
-                        Ok(path) => {
-                            self.status = format!("Saved edited atlas PNG: {}", path.display());
-                            self.log(self.status.clone());
-                            self.reload_content();
-                        }
-                        Err(error) => {
-                            self.status = "Failed to save edited atlas PNG.".to_string();
-                            self.log(format!("Pixel editor save error: {error:#}"));
+                    if self.workspace_tab == WorkspaceTab::World
+                        || self.editor_map.as_ref().map(|state| state.dirty).unwrap_or(false)
+                    {
+                        self.save_active_map_layers();
+                    } else {
+                        match self.pixel_editor.save_png_with_backup() {
+                            Ok(path) => {
+                                self.status = format!("Saved edited atlas PNG: {}", path.display());
+                                self.log(self.status.clone());
+                                self.reload_content();
+                            }
+                            Err(error) => {
+                                self.status = "Failed to save edited atlas PNG.".to_string();
+                                self.log(format!("Pixel editor save error: {error:#}"));
+                            }
                         }
                     }
                     return;
@@ -1157,11 +1738,12 @@ impl StarlightRidgeEguiEditor {
     fn draw_top_bar(&mut self, ctx: &egui::Context) {
         egui::Panel::top("editor_top_bar").show(ctx, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.strong("Starlight Ridge Editor");
+                ui.label("Project workspace");
                 ui.separator();
                 ui.selectable_value(&mut self.workspace_tab, WorkspaceTab::Project, "Project");
                 ui.selectable_value(&mut self.workspace_tab, WorkspaceTab::World, "World");
                 ui.selectable_value(&mut self.workspace_tab, WorkspaceTab::Assets, "Assets");
+                ui.selectable_value(&mut self.workspace_tab, WorkspaceTab::Render, "Render");
                 ui.selectable_value(&mut self.workspace_tab, WorkspaceTab::Animation, "Animation");
                 ui.selectable_value(&mut self.workspace_tab, WorkspaceTab::Character, "Character");
                 ui.selectable_value(&mut self.workspace_tab, WorkspaceTab::Logic, "Logic");
@@ -1184,6 +1766,12 @@ impl StarlightRidgeEguiEditor {
                         ui.label("World:");
                         ui.selectable_value(&mut self.world_subtab, WorldSubTab::MapPaint, "Map Paint");
                         ui.selectable_value(&mut self.world_subtab, WorldSubTab::Layers, "Layers");
+                        ui.selectable_value(&mut self.world_subtab, WorldSubTab::HeightElevation, "Height / Elevation");
+                        ui.selectable_value(&mut self.world_subtab, WorldSubTab::SceneLayout3D, "3D Scene Layout");
+                        ui.selectable_value(&mut self.world_subtab, WorldSubTab::CameraPresentation, "Camera / Presentation");
+                        ui.selectable_value(&mut self.world_subtab, WorldSubTab::LightingTime, "Lighting / Time");
+                        ui.selectable_value(&mut self.world_subtab, WorldSubTab::Weather, "Weather");
+                        ui.selectable_value(&mut self.world_subtab, WorldSubTab::WorldGen, "WorldGen");
                         ui.selectable_value(&mut self.world_subtab, WorldSubTab::Interactions, "Interactions");
                         ui.selectable_value(&mut self.world_subtab, WorldSubTab::Spawns, "Spawns");
                         ui.selectable_value(&mut self.world_subtab, WorldSubTab::TerrainRules, "Terrain Rules");
@@ -1193,9 +1781,23 @@ impl StarlightRidgeEguiEditor {
                         ui.selectable_value(&mut self.asset_subtab, AssetSubTab::TerrainAtlas, "Terrain Atlas");
                         ui.selectable_value(&mut self.asset_subtab, AssetSubTab::AtlasCompare, "Atlas Compare / Import");
                         ui.selectable_value(&mut self.asset_subtab, AssetSubTab::PixelEditor, "Pixel Editor");
+                        ui.selectable_value(&mut self.asset_subtab, AssetSubTab::SpriteSheets, "Sprite Sheets");
                         ui.selectable_value(&mut self.asset_subtab, AssetSubTab::Voxels, "VOX Models");
+                        ui.selectable_value(&mut self.asset_subtab, AssetSubTab::BlockbenchModels, "Blockbench Models");
+                        ui.selectable_value(&mut self.asset_subtab, AssetSubTab::BlenderSources, "Blender Sources");
+                        ui.selectable_value(&mut self.asset_subtab, AssetSubTab::MaterialsPalettes, "Materials / Palettes");
                         ui.selectable_value(&mut self.asset_subtab, AssetSubTab::Props, "Props / Objects");
                         ui.selectable_value(&mut self.asset_subtab, AssetSubTab::Seasons, "Seasons");
+                    }
+                    WorkspaceTab::Render => {
+                        ui.label("Render:");
+                        ui.selectable_value(&mut self.render_subtab, RenderSubTab::Viewport3D, "3D Viewport");
+                        ui.selectable_value(&mut self.render_subtab, RenderSubTab::ScenePreview, "Scene Preview");
+                        ui.selectable_value(&mut self.render_subtab, RenderSubTab::SpriteBake, "Sprite Bake");
+                        ui.selectable_value(&mut self.render_subtab, RenderSubTab::IconBake, "Icon Bake");
+                        ui.selectable_value(&mut self.render_subtab, RenderSubTab::LightingStudio, "Lighting Studio");
+                        ui.selectable_value(&mut self.render_subtab, RenderSubTab::CameraPresets, "Camera Presets");
+                        ui.selectable_value(&mut self.render_subtab, RenderSubTab::RenderJobs, "Render Jobs");
                     }
                     WorkspaceTab::Logic => {
                         ui.label("Logic:");
@@ -1358,9 +1960,30 @@ impl StarlightRidgeEguiEditor {
         }
 
         ui.separator();
+        if let Some(state) = &self.editor_map {
+            ui.label(format!("Layers file: {}", state.layers_path.display()));
+            ui.label(format!("Editable layers: {}", state.layers.layers.len()));
+            ui.label(format!("Selected layer: {}", state.selected_layer_id()));
+            ui.label(format!("Selected symbol: '{}'", state.selected_symbol));
+            ui.label(if state.dirty { "Map edits: dirty" } else { "Map edits: clean" });
+        } else {
+            ui.label("No editable layers.ron loaded for this map.");
+        }
+
+        ui.horizontal(|ui| {
+            if ui.button("Save map layers Ctrl+S").clicked() {
+                self.save_active_map_layers();
+            }
+            if ui.button("Reload layers").clicked() {
+                self.reload_content();
+            }
+        });
+
+        ui.separator();
         ui.checkbox(&mut self.show_grid, "Show map grid");
         ui.checkbox(&mut self.show_transitions, "Show transition overlays");
         ui.add(egui::Slider::new(&mut self.preview_zoom, 0.5..=3.0).text("Preview zoom"));
+        ui.add(egui::Slider::new(&mut self.map_brush_size, 1..=9).text("Map brush"));
     }
 
     fn draw_right_panel(&mut self, ctx: &egui::Context) {
@@ -1546,6 +2169,19 @@ impl StarlightRidgeEguiEditor {
                         ui.label(format!("map: {}", self.active_map_id));
                         ui.separator();
                         ui.label(format!("tool: {}", TOOL_NAMES[self.selected_tool]));
+                        ui.separator();
+                        let map_state = self
+                            .editor_map
+                            .as_ref()
+                            .map(|state| {
+                                format!(
+                                    "layer: {} · {}",
+                                    state.selected_layer_id(),
+                                    if state.dirty { "dirty" } else { "clean" }
+                                )
+                            })
+                            .unwrap_or_else(|| "layer: none".to_string());
+                        ui.label(map_state);
                     });
                 });
             });
@@ -1562,10 +2198,26 @@ impl StarlightRidgeEguiEditor {
     }
 
     fn draw_validation_tab(&mut self, ui: &mut egui::Ui) {
-        ui.label("Known missing validation targets:");
+        ui.heading("Map layer validation");
+        let issues = self.map_layer_validation_issues();
+        if issues.is_empty() {
+            ui.label(format!("No layer issues detected for '{}'.", self.active_map_id));
+        } else {
+            ui.label(format!("{} issue(s) detected for '{}':", issues.len(), self.active_map_id));
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                for issue in issues.iter().take(80) {
+                    ui.label(format!("• {issue}"));
+                }
+                if issues.len() > 80 {
+                    ui.label(format!("…and {} more.", issues.len() - 80));
+                }
+            });
+        }
+
+        ui.separator();
+        ui.label("Other queued validation targets:");
         ui.label("• external atlas import must validate size, tile grid, role tags, and collisions before merging");
         ui.label("• animation timeline events need socket/hitbox preview and save validation");
-        ui.label("• maps need save-time checks for missing tile IDs, blocked spawn points, and invalid transitions");
         ui.label("• seasonal tile sets need parity checks across spring/summer/autumn/winter");
     }
 
@@ -1585,6 +2237,11 @@ impl StarlightRidgeEguiEditor {
         ));
         ui.label(format!("Selected tool: {}", TOOL_NAMES[self.selected_tool]));
         ui.label(format!("Selected tile: {}", self.selected_tile_id));
+        if let Some(state) = &self.editor_map {
+            ui.label(format!("Editable layer: {}", state.selected_layer_id()));
+            ui.label(format!("Layer dirty: {}", state.dirty));
+            ui.label(format!("Layers path: {}", state.layers_path.display()));
+        }
     }
 
     fn draw_center_panel(&mut self, ctx: &egui::Context) {
@@ -1594,6 +2251,7 @@ impl StarlightRidgeEguiEditor {
                 WorkspaceTab::Project => self.draw_project_workspace(ui),
                 WorkspaceTab::World => self.draw_world_workspace(ui),
                 WorkspaceTab::Assets => self.draw_assets_workspace(ui),
+                WorkspaceTab::Render => self.draw_render_workspace(ui),
                 WorkspaceTab::Animation => self.draw_animation_workspace(ui),
                 WorkspaceTab::Character => self.draw_character_workspace(ui),
                 WorkspaceTab::Logic => self.draw_logic_workspace(ui),
@@ -1618,26 +2276,351 @@ impl StarlightRidgeEguiEditor {
             columns[2].label(format!("Atlas pipelines: {}", self.registry.editor_atlas_pipelines.len()));
             columns[2].label(format!("Export pipelines: {}", self.registry.editor_export_pipelines.len()));
             columns[2].label(format!("Animation pipelines: {}", self.registry.editor_animation_pipelines.len()));
+            columns[2].label(format!("Hybrid world pipelines: {}", self.registry.hybrid_world_editor_pipelines.len()));
+            columns[2].label(format!("Height maps: {}", self.registry.map_height_maps.len()));
+            columns[2].label(format!("3D scenes: {}", self.registry.map_scene3d.len()));
+            columns[2].label(format!("Presentations: {}", self.registry.map_presentations.len()));
         });
     }
 
     fn draw_world_workspace(&mut self, ui: &mut egui::Ui) {
-        self.draw_workspace_header(ui, "World Editor", "Map preview, layer inspection, interaction zones, spawns, and terrain-rule scaffolds.");
+        self.draw_workspace_header(ui, "World Editor", "Grid gameplay authoring plus 2.5D/3D scene, height, lighting, and presentation scaffolds.");
         match self.world_subtab {
             WorldSubTab::MapPaint => self.draw_world_preview_workspace(ui),
-            WorldSubTab::Layers => self.draw_workspace_notes(ui, "Layer tools", &["Layer visibility/edit locks", "Layer order", "Collision and transition overlays", "Save-time layer validation"]),
+            WorldSubTab::Layers => self.draw_world_layers_workspace(ui),
+            WorldSubTab::HeightElevation => self.draw_world_height_workspace(ui),
+            WorldSubTab::SceneLayout3D => self.draw_world_scene3d_workspace(ui),
+            WorldSubTab::CameraPresentation => self.draw_world_presentation_workspace(ui),
+            WorldSubTab::LightingTime => self.draw_world_lighting_workspace(ui),
+            WorldSubTab::Weather => self.draw_workspace_notes(ui, "Weather authoring", &["Weather profiles", "Puddle/snow accumulation hooks", "Lighting/audio modifiers", "Runtime weather debug handoff"]),
+            WorldSubTab::WorldGen => self.draw_workspace_notes(ui, "WorldGen", &["Scene templates", "Generated draft preview", "Bake to editable map layers", "Height/3D object generation hooks"]),
             WorldSubTab::Interactions => self.draw_workspace_notes(ui, "Interaction tools", &["Clickable trigger regions", "Door/warp metadata", "Tool-hit interaction zones", "Object interaction probes"]),
             WorldSubTab::Spawns => self.draw_workspace_notes(ui, "Spawn tools", &["Player spawn marker editing", "NPC spawn markers", "Blocked-spawn validation", "Playtest from selected cell"]),
             WorldSubTab::TerrainRules => self.draw_workspace_notes(ui, "Terrain rules", &["Autotile ruleset view", "Transition preview pairs", "Protected layer report", "Bake generated draft to editable map"]),
         }
     }
 
+    fn draw_world_height_workspace(&mut self, ui: &mut egui::Ui) {
+        self.draw_workspace_header(
+            ui,
+            "Height / Elevation",
+            "Author terrain height while preserving the 2D gameplay grid as the source of truth.",
+        );
+
+        if let Some(height) = self.registry.map_height_maps.get(&self.active_map_id) {
+            ui.columns(3, |columns| {
+                columns[0].heading("Map");
+                columns[0].label(format!("Map id: {}", height.map_id));
+                columns[0].label(format!("Size: {} x {}", height.width, height.height));
+                columns[0].label(format!("Cell size: {:.2}", height.cell_size));
+                columns[1].heading("Height range");
+                columns[1].label(format!("Default: {}", height.default_height));
+                columns[1].label(format!("Min: {}", height.min_height));
+                columns[1].label(format!("Max: {}", height.max_height));
+                columns[2].heading("Data");
+                columns[2].label(format!("Explicit cells: {}", height.values.len()));
+                columns[2].label("Empty values use the default height.");
+            });
+            ui.separator();
+            for note in &height.notes {
+                ui.label(format!("• {note}"));
+            }
+        } else {
+            ui.label(format!("No height.ron loaded for '{}'.", self.active_map_id));
+        }
+
+        ui.separator();
+        self.draw_workspace_notes(
+            ui,
+            "Planned height tools",
+            &[
+                "Raise/lower brush",
+                "Slope/cliff marking",
+                "Water depth and shore shaping",
+                "2.5D/3D preview handoff",
+            ],
+        );
+    }
+
+    fn draw_world_scene3d_workspace(&mut self, ui: &mut egui::Ui) {
+        self.draw_workspace_header(
+            ui,
+            "3D Scene Layout",
+            "Place VOX, Blockbench, Blender, glTF, baked sprite, and hybrid proxy objects on the same gameplay grid.",
+        );
+
+        if let Some(scene3d) = self.registry.map_scene3d.get(&self.active_map_id) {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(format!("Coordinate space: {}", scene3d.coordinate_space));
+                ui.separator();
+                ui.label(format!("Units per tile: {:.2}", scene3d.units_per_tile));
+                ui.separator();
+                ui.label(format!("Objects: {}", scene3d.objects.len()));
+            });
+            ui.separator();
+            egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                egui::Grid::new("scene3d_object_grid").striped(true).show(ui, |ui| {
+                    ui.strong("id");
+                    ui.strong("asset");
+                    ui.strong("source");
+                    ui.strong("mode");
+                    ui.strong("cell");
+                    ui.end_row();
+                    for object in &scene3d.objects {
+                        ui.label(&object.id);
+                        ui.label(&object.asset_id);
+                        ui.label(format!("{:?}", object.source_kind));
+                        ui.label(format!("{:?}", object.visual_mode));
+                        ui.label(format!("{}, {}", object.cell_x, object.cell_y));
+                        ui.end_row();
+                    }
+                });
+            });
+        } else {
+            ui.label(format!("No scene3d.ron loaded for '{}'.", self.active_map_id));
+        }
+
+        ui.separator();
+        self.draw_workspace_notes(
+            ui,
+            "Planned 3D scene tools",
+            &[
+                "3D object placement gizmo",
+                "Grid footprint and collision overlay",
+                "Open source asset in MagicaVoxel / Blockbench / Blender",
+                "Send selected object to Render tab for preview or bake",
+            ],
+        );
+    }
+
+    fn draw_world_presentation_workspace(&mut self, ui: &mut egui::Ui) {
+        self.draw_workspace_header(
+            ui,
+            "Camera / Presentation",
+            "Switch between 2D debug, hybrid 2.5D, and 3D presentation profiles without changing gameplay data.",
+        );
+
+        if let Some(presentation) = self.registry.map_presentations.get(&self.active_map_id) {
+            ui.columns(3, |columns| {
+                columns[0].heading("Mode");
+                columns[0].label(format!("Default: {:?}", presentation.default_mode));
+                columns[0].label(format!("Active camera: {}", presentation.active_camera_profile));
+                columns[1].heading("Sprite rules");
+                columns[1].label(format!("Depth sorting: {}", presentation.depth_sorting));
+                columns[1].label(format!("Billboarding: {}", presentation.sprite_billboarding));
+                columns[1].label(format!("Pixel snap: {}", presentation.pixel_snap));
+                columns[2].heading("Profiles");
+                columns[2].label(format!("Camera profiles: {}", presentation.camera_profiles.len()));
+            });
+            ui.separator();
+            egui::Grid::new("camera_profile_grid").striped(true).show(ui, |ui| {
+                ui.strong("id");
+                ui.strong("mode");
+                ui.strong("pitch");
+                ui.strong("ortho");
+                ui.end_row();
+                for profile in &presentation.camera_profiles {
+                    ui.label(&profile.id);
+                    ui.label(format!("{:?}", profile.mode));
+                    ui.label(format!("{:.1}", profile.pitch_degrees));
+                    ui.label(format!("{:.1}", profile.orthographic_scale));
+                    ui.end_row();
+                }
+            });
+        } else {
+            ui.label(format!("No presentation.ron loaded for '{}'.", self.active_map_id));
+        }
+    }
+
+    fn draw_world_lighting_workspace(&mut self, ui: &mut egui::Ui) {
+        self.draw_workspace_header(
+            ui,
+            "Lighting / Time",
+            "Author day, evening, night, and weather lighting profiles for 2.5D/3D presentation.",
+        );
+
+        if let Some(lighting) = self.registry.map_lighting_profiles.get(&self.active_map_id) {
+            ui.label(format!("Active profile: {}", lighting.active_profile));
+            ui.separator();
+            egui::Grid::new("lighting_profile_grid").striped(true).show(ui, |ui| {
+                ui.strong("id");
+                ui.strong("time");
+                ui.strong("ambient");
+                ui.strong("shadow");
+                ui.strong("weather");
+                ui.end_row();
+                for profile in &lighting.profiles {
+                    ui.label(&profile.id);
+                    ui.label(&profile.time_of_day);
+                    ui.label(format!("{:.2}", profile.ambient_strength));
+                    ui.label(format!("{:.2}", profile.shadow_strength));
+                    ui.label(&profile.weather_modifier);
+                    ui.end_row();
+                }
+            });
+        } else {
+            ui.label(format!("No lighting.ron loaded for '{}'.", self.active_map_id));
+        }
+    }
+
+    fn draw_map_layer_controls(&mut self, ui: &mut egui::Ui) {
+        let layer_options = self
+            .editor_map
+            .as_ref()
+            .map(|state| {
+                state
+                    .layers
+                    .layers
+                    .iter()
+                    .enumerate()
+                    .map(|(index, layer)| (index, layer.id.clone(), layer.visible))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        if layer_options.is_empty() {
+            ui.label("No editable layers are loaded.");
+            return;
+        }
+
+        let mut selected_layer_index = self
+            .editor_map
+            .as_ref()
+            .map(|state| state.selected_layer_index)
+            .unwrap_or(0);
+        ui.horizontal(|ui| {
+            ui.label("Layer");
+            egui::ComboBox::from_id_salt("world_selected_layer_combo")
+                .selected_text(
+                    layer_options
+                        .iter()
+                        .find(|(index, _, _)| *index == selected_layer_index)
+                        .map(|(_, id, visible)| format!("{}{}", id, if *visible { "" } else { " (hidden)" }))
+                        .unwrap_or_else(|| "<none>".to_string()),
+                )
+                .show_ui(ui, |ui| {
+                    for (index, id, visible) in &layer_options {
+                        ui.selectable_value(
+                            &mut selected_layer_index,
+                            *index,
+                            format!("{}{}", id, if *visible { "" } else { " (hidden)" }),
+                        );
+                    }
+                });
+
+            let mut layer_changed = false;
+            if let Some(state) = self.editor_map.as_mut() {
+                if selected_layer_index < state.layers.layers.len()
+                    && selected_layer_index != state.selected_layer_index
+                {
+                    state.selected_layer_index = selected_layer_index;
+                    if let Some(symbol) = state
+                        .selected_layer()
+                        .and_then(|layer| layer.legend.first())
+                        .and_then(|entry| entry.symbol.chars().next())
+                    {
+                        state.selected_symbol = symbol;
+                    }
+                    layer_changed = true;
+                }
+            }
+            if layer_changed {
+                self.sync_selected_symbol_to_tile();
+            }
+
+            if ui.button("Save layers Ctrl+S").clicked() {
+                self.save_active_map_layers();
+            }
+            if ui.button("Reload").clicked() {
+                self.reload_content();
+            }
+        });
+
+        let mut visible_change = None;
+        if let Some(state) = self.editor_map.as_ref() {
+            if let Some(layer) = state.selected_layer() {
+                let mut visible = layer.visible;
+                if ui.checkbox(&mut visible, "Selected layer visible").changed() {
+                    visible_change = Some(visible);
+                }
+            }
+        }
+        if let Some(visible) = visible_change {
+            if let Some(state) = self.editor_map.as_mut() {
+                let index = state.selected_layer_index;
+                if let Some(layer) = state.layers.layers.get_mut(index) {
+                    layer.visible = visible;
+                    state.dirty = true;
+                }
+            }
+        }
+
+        let symbol_options = self
+            .editor_map
+            .as_ref()
+            .and_then(|state| state.selected_layer())
+            .map(|layer| {
+                layer
+                    .legend
+                    .iter()
+                    .filter_map(|entry| {
+                        entry
+                            .symbol
+                            .chars()
+                            .next()
+                            .map(|symbol| (symbol, entry.tile_id.clone()))
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        let mut selected_symbol = self
+            .editor_map
+            .as_ref()
+            .map(|state| state.selected_symbol)
+            .unwrap_or('.');
+        ui.horizontal(|ui| {
+            ui.label("Symbol / tile");
+            egui::ComboBox::from_id_salt("world_selected_symbol_combo")
+                .selected_text(format!("'{}' / {}", selected_symbol, self.selected_tile_id))
+                .show_ui(ui, |ui| {
+                    for (symbol, tile_id) in &symbol_options {
+                        ui.selectable_value(&mut selected_symbol, *symbol, format!("'{}'  {}", symbol, tile_id));
+                    }
+                });
+        });
+
+        let selected_tile_from_symbol = symbol_options
+            .iter()
+            .find(|(symbol, _)| *symbol == selected_symbol)
+            .map(|(_, tile_id)| tile_id.clone());
+        if let Some(state) = self.editor_map.as_mut() {
+            state.selected_symbol = selected_symbol;
+        }
+        if let Some(tile_id) = selected_tile_from_symbol {
+            if tile_id != self.selected_tile_id {
+                self.select_tile(tile_id, "Layer symbol");
+            }
+        }
+
+        ui.horizontal(|ui| {
+            ui.add(egui::Slider::new(&mut self.map_brush_size, 1..=9).text("Brush size"));
+            ui.label("B brush · E erase · G fill · I pick · Ctrl+S save");
+        });
+    }
+
     fn draw_world_preview_workspace(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.heading("World Preview");
+            ui.heading("World Map Paint");
             ui.label(format!("Map: {}", self.active_map_id));
             ui.label(format!("Tool: {}", TOOL_NAMES[self.selected_tool]));
+            if let Some(state) = &self.editor_map {
+                ui.label(format!("Layer: {}", state.selected_layer_id()));
+                ui.label(if state.dirty { "Dirty" } else { "Clean" });
+            }
         });
+        ui.separator();
+        self.draw_map_layer_controls(ui);
         ui.separator();
 
         let available = ui.available_size();
@@ -1655,27 +2638,256 @@ impl StarlightRidgeEguiEditor {
 
         self.paint_world_preview(rect, &painter);
 
-        if response.clicked() {
+        if !ui.input(|input| input.pointer.primary_down()) {
+            if let Some(state) = self.editor_map.as_mut() {
+                state.last_painted_cell = None;
+            }
+        }
+
+        let should_process = response.clicked()
+            || (response.dragged() && matches!(self.selected_tool, 2 | 3));
+        if should_process {
             if let Some(pointer) = response.interact_pointer_pos() {
                 if let Some((map_x, map_y)) = self.pos_to_map_cell(rect, pointer) {
-                    self.selected_map_cell = Some((map_x, map_y));
-                    if let Some(tile_id) = self.tile_id_at_map_cell(map_x, map_y) {
-                        self.select_tile(tile_id, "World preview");
-                    } else {
-                        self.status = format!("Selected empty map cell {map_x},{map_y}.");
+                    let clicked = response.clicked();
+                    let should_skip = self
+                        .editor_map
+                        .as_ref()
+                        .and_then(|state| state.last_painted_cell)
+                        == Some((map_x, map_y))
+                        && !clicked;
+                    if !should_skip {
+                        if let Some(state) = self.editor_map.as_mut() {
+                            state.last_painted_cell = Some((map_x, map_y));
+                        }
+                        self.apply_map_tool_at_cell(map_x, map_y, clicked);
                     }
                 }
             }
         }
     }
 
+    fn draw_world_layers_workspace(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.heading("Editable Layers");
+            if let Some(state) = &self.editor_map {
+                ui.label(format!("{} layer(s)", state.layers.layers.len()));
+                ui.label(if state.dirty { "Dirty" } else { "Clean" });
+            }
+            if ui.button("Save layers Ctrl+S").clicked() {
+                self.save_active_map_layers();
+            }
+        });
+        ui.separator();
+        self.draw_map_layer_controls(ui);
+        ui.separator();
+
+        let layer_rows = self
+            .editor_map
+            .as_ref()
+            .map(|state| {
+                state
+                    .layers
+                    .layers
+                    .iter()
+                    .enumerate()
+                    .map(|(index, layer)| {
+                        (
+                            index,
+                            layer.id.clone(),
+                            layer.visible,
+                            layer.rows.len(),
+                            layer.rows.iter().map(|row| row.chars().count()).max().unwrap_or(0),
+                            layer.legend.len(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        egui::Grid::new("world_layers_grid")
+            .striped(true)
+            .show(ui, |ui| {
+                ui.strong("Active");
+                ui.strong("Visible");
+                ui.strong("Layer");
+                ui.strong("Rows");
+                ui.strong("Width");
+                ui.strong("Legend");
+                ui.end_row();
+
+                for (index, id, visible, rows, width, legend_count) in layer_rows {
+                    let selected = self
+                        .editor_map
+                        .as_ref()
+                        .map(|state| state.selected_layer_index == index)
+                        .unwrap_or(false);
+                    if ui.selectable_label(selected, "edit").clicked() {
+                        if let Some(state) = self.editor_map.as_mut() {
+                            state.selected_layer_index = index;
+                        }
+                    }
+
+                    let mut next_visible = visible;
+                    if ui.checkbox(&mut next_visible, "").changed() {
+                        if let Some(state) = self.editor_map.as_mut() {
+                            if let Some(layer) = state.layers.layers.get_mut(index) {
+                                layer.visible = next_visible;
+                                state.dirty = true;
+                            }
+                        }
+                    }
+                    ui.label(id);
+                    ui.label(rows.to_string());
+                    ui.label(width.to_string());
+                    ui.label(legend_count.to_string());
+                    ui.end_row();
+                }
+            });
+
+        ui.separator();
+        ui.heading("Selected layer legend");
+        let legend_entries = self
+            .editor_map
+            .as_ref()
+            .and_then(|state| {
+                state.selected_layer().map(|layer| {
+                    layer
+                        .legend
+                        .iter()
+                        .filter_map(|entry| {
+                            entry
+                                .symbol
+                                .chars()
+                                .next()
+                                .map(|symbol| (symbol, entry.symbol.clone(), entry.tile_id.clone()))
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .unwrap_or_default();
+        let selected_symbol = self
+            .editor_map
+            .as_ref()
+            .map(|state| state.selected_symbol)
+            .unwrap_or('.');
+        egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+            for (symbol, symbol_text, tile_id) in legend_entries {
+                let selected = selected_symbol == symbol;
+                if ui
+                    .selectable_label(selected, format!("'{}'  →  {}", symbol_text, tile_id))
+                    .clicked()
+                {
+                    if let Some(state) = self.editor_map.as_mut() {
+                        state.selected_symbol = symbol;
+                    }
+                    self.select_tile(tile_id, "Layer legend");
+                }
+            }
+        });
+    }
+
+
+    fn draw_render_workspace(&mut self, ui: &mut egui::Ui) {
+        self.draw_workspace_header(
+            ui,
+            "Render Studio",
+            "3D/2.5D scene preview, camera profiles, lighting, sprite bakes, icon bakes, and future Blender automation.",
+        );
+
+        match self.render_subtab {
+            RenderSubTab::Viewport3D => self.draw_workspace_notes(
+                ui,
+                "3D Viewport",
+                &[
+                    "Internal orbit camera scaffold",
+                    "Grid floor and origin gizmo",
+                    "VOX/Blockbench/Blender asset preview target",
+                    "Bounds, collision, scale, and origin diagnostics",
+                ],
+            ),
+            RenderSubTab::ScenePreview => self.draw_render_scene_preview_workspace(ui),
+            RenderSubTab::SpriteBake => self.draw_workspace_notes(
+                ui,
+                "Sprite Bake",
+                &[
+                    "Bake VOX/Blockbench/Blender sources into 2D runtime sprites",
+                    "1/4/8 direction camera presets",
+                    "Transparent output, optional shadow/mask/depth maps",
+                    "Bash/Blender job runner integration next",
+                ],
+            ),
+            RenderSubTab::IconBake => self.draw_workspace_notes(
+                ui,
+                "Icon Bake",
+                &[
+                    "Inventory/tool/crafting icon render presets",
+                    "Consistent camera, outline, and transparent background",
+                    "Generated output metadata and validation",
+                ],
+            ),
+            RenderSubTab::LightingStudio => self.draw_world_lighting_workspace(ui),
+            RenderSubTab::CameraPresets => self.draw_world_presentation_workspace(ui),
+            RenderSubTab::RenderJobs => self.draw_workspace_notes(
+                ui,
+                "Render Jobs",
+                &[
+                    "Queued Blender jobs",
+                    "Generated sprite/icon outputs",
+                    "Render logs and exit codes",
+                    "Re-run failed bake jobs from the editor",
+                ],
+            ),
+        }
+    }
+
+    fn draw_render_scene_preview_workspace(&mut self, ui: &mut egui::Ui) {
+        ui.heading(format!("Scene preview source: {}", self.active_map_id));
+        ui.horizontal_wrapped(|ui| {
+            ui.label(format!("2D layers: {}", self.registry.map_layers.contains_key(&self.active_map_id)));
+            ui.separator();
+            ui.label(format!("Height: {}", self.registry.map_height_maps.contains_key(&self.active_map_id)));
+            ui.separator();
+            ui.label(format!("3D scene: {}", self.registry.map_scene3d.contains_key(&self.active_map_id)));
+            ui.separator();
+            ui.label(format!("Presentation: {}", self.registry.map_presentations.contains_key(&self.active_map_id)));
+        });
+        ui.separator();
+
+        if let Some(presentation) = self.registry.map_presentations.get(&self.active_map_id) {
+            ui.label(format!("Default render mode: {:?}", presentation.default_mode));
+            ui.label(format!("Active camera profile: {}", presentation.active_camera_profile));
+            ui.label(format!("Depth sorting: {}", presentation.depth_sorting));
+        }
+
+        if let Some(scene3d) = self.registry.map_scene3d.get(&self.active_map_id) {
+            ui.label(format!("3D/proxy objects queued for preview: {}", scene3d.objects.len()));
+        }
+
+        ui.separator();
+        self.draw_workspace_notes(
+            ui,
+            "Preview modes to wire next",
+            &[
+                "2D tilemap debug view",
+                "Hybrid 2.5D depth-sorted view",
+                "3D orthographic/perspective scene view",
+                "Toggle live 3D vs baked sprite object presentation",
+            ],
+        );
+    }
+
     fn draw_assets_workspace(&mut self, ui: &mut egui::Ui) {
         self.draw_workspace_header(ui, "Asset Studio", "Terrain atlas, compare/import, pixel editing, props, and seasonal asset readiness.");
         match self.asset_subtab {
-            AssetSubTab::TerrainAtlas => self.draw_workspace_notes(ui, "Terrain Atlas", &["Current patch keeps the selectable metadata list stable", "Phase 42 should replace color-cell preview with the real atlas texture", "Tile role and collision metadata can be saved from the inspector"]),
+            AssetSubTab::TerrainAtlas => self.draw_workspace_notes(ui, "Terrain Atlas", &["Tile metadata", "Terrain roles", "Autotile assignments", "Season variant links"]),
             AssetSubTab::AtlasCompare => self.draw_workspace_notes(ui, "Atlas Compare / Import", &["Side-by-side source/project tilesheet preview", "Drag tile transfer", "Overwrite/append modes", "Mirror-aware paste", "Metadata rewrite and validation"]),
             AssetSubTab::PixelEditor => self.draw_pixel_editor_workspace(ui),
+            AssetSubTab::SpriteSheets => self.draw_workspace_notes(ui, "Sprite Sheets", &["Runtime sprite sheets", "Character/object sheets", "Frame grid metadata", "Animation handoff"]),
             AssetSubTab::Voxels => self.draw_voxels_workspace(ui),
+            AssetSubTab::BlockbenchModels => self.draw_workspace_notes(ui, "Blockbench Models", &[".bbmodel source assets", "glTF/OBJ export watching", "Scale/origin validation", "Send to Blender bake"]),
+            AssetSubTab::BlenderSources => self.draw_workspace_notes(ui, "Blender Sources", &[".blend references", "Bake job inputs", "Sprite/icon outputs", "Render preset linkage"]),
+            AssetSubTab::MaterialsPalettes => self.draw_workspace_notes(ui, "Materials / Palettes", &["Pixel palettes", "3D material slots", "VOX palette checks", "Season/weather tint hooks"]),
             AssetSubTab::Props => self.draw_workspace_notes(ui, "Props / Objects", &["Static prop atlas", "Object placement metadata", "Collision footprint preview", "Interaction marker preview"]),
             AssetSubTab::Seasons => self.draw_workspace_notes(ui, "Season Variants", &["Spring/summer/autumn/winter parity", "Season-specific atlas selection", "Water animation preview", "Missing variant validation"]),
         }
@@ -2016,52 +3228,89 @@ impl StarlightRidgeEguiEditor {
             });
     }
 
+    fn world_preview_layout(&self, rect: egui::Rect) -> (u32, u32, f32, egui::Pos2) {
+        let (map_width, map_height) = self.active_map_dimensions();
+        let map_w = map_width.max(1) as f32;
+        let map_h = map_height.max(1) as f32;
+        let base_cell = (rect.width() / map_w).min(rect.height() / map_h) * self.preview_zoom;
+        let cell = base_cell.clamp(4.0, 48.0);
+        let world_w = cell * map_w;
+        let world_h = cell * map_h;
+        let origin = egui::pos2(rect.center().x - world_w * 0.5, rect.center().y - world_h * 0.5);
+        (map_width, map_height, cell, origin)
+    }
+
     fn paint_world_preview(&self, rect: egui::Rect, painter: &egui::Painter) {
-        let Some(tile_map) = &self.tile_map else {
+        let Some(state) = &self.editor_map else {
             painter.text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
-                "No tile map render data loaded",
+                "No editable layers.ron loaded",
                 egui::FontId::proportional(18.0),
                 egui::Color32::from_rgb(220, 230, 240),
             );
             return;
         };
 
-        let map_w = tile_map.map_width.max(1) as f32;
-        let map_h = tile_map.map_height.max(1) as f32;
-        let base_cell = (rect.width() / map_w).min(rect.height() / map_h) * self.preview_zoom;
-        let cell = base_cell.clamp(4.0, 48.0);
-        let world_w = cell * map_w;
-        let world_h = cell * map_h;
-        let origin = egui::pos2(
-            rect.center().x - world_w * 0.5,
-            rect.center().y - world_h * 0.5,
-        );
+        let (map_width, map_height, cell, origin) = self.world_preview_layout(rect);
+        let world_w = cell * map_width as f32;
+        let world_h = cell * map_height as f32;
 
-        for tile in &tile_map.tiles {
-            if !self.show_transitions && is_likely_transition(tile) {
+        for (layer_index, layer) in state.layers.layers.iter().enumerate() {
+            if !layer.visible {
                 continue;
             }
-            let x = origin.x + tile.x as f32 * cell;
-            let y = origin.y + tile.y as f32 * cell;
-            let tile_rect = egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(cell, cell));
-            if !tile_rect.intersects(rect) {
-                continue;
+            let legend = layer
+                .legend
+                .iter()
+                .filter_map(|entry| entry.symbol.chars().next().map(|symbol| (symbol, entry.tile_id.as_str())))
+                .collect::<std::collections::HashMap<_, _>>();
+
+            for (y, row) in layer.rows.iter().enumerate() {
+                if y as u32 >= map_height {
+                    break;
+                }
+                for (x, symbol) in row.chars().enumerate() {
+                    if x as u32 >= map_width || is_empty_layer_symbol(symbol) {
+                        continue;
+                    }
+                    let Some(tile_id) = legend.get(&symbol) else {
+                        continue;
+                    };
+                    if !self.show_transitions && tile_id.contains("transition") {
+                        continue;
+                    }
+                    let tile_rect = egui::Rect::from_min_size(
+                        egui::pos2(origin.x + x as f32 * cell, origin.y + y as f32 * cell),
+                        egui::vec2(cell, cell),
+                    );
+                    if !tile_rect.intersects(rect) {
+                        continue;
+                    }
+                    painter.rect_filled(tile_rect, 0.0, self.tile_color_from_id(tile_id));
+
+                    if layer_index == state.selected_layer_index && cell >= 10.0 {
+                        painter.rect_stroke(
+                            tile_rect.shrink(1.0),
+                            0.0,
+                            egui::Stroke::new(0.5, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 36)),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
+                }
             }
-            painter.rect_filled(tile_rect, 0.0, color_for_tile(tile));
         }
 
         if self.show_grid && cell >= 7.0 {
             let stroke = egui::Stroke::new(0.5, egui::Color32::from_rgba_unmultiplied(0, 0, 0, 96));
-            for x in 0..=tile_map.map_width {
+            for x in 0..=map_width {
                 let px = origin.x + x as f32 * cell;
                 painter.line_segment(
                     [egui::pos2(px, origin.y), egui::pos2(px, origin.y + world_h)],
                     stroke,
                 );
             }
-            for y in 0..=tile_map.map_height {
+            for y in 0..=map_height {
                 let py = origin.y + y as f32 * cell;
                 painter.line_segment(
                     [egui::pos2(origin.x, py), egui::pos2(origin.x + world_w, py)],
@@ -2085,14 +3334,9 @@ impl StarlightRidgeEguiEditor {
     }
 
     fn pos_to_map_cell(&self, rect: egui::Rect, pos: egui::Pos2) -> Option<(u32, u32)> {
-        let tile_map = self.tile_map.as_ref()?;
-        let map_w = tile_map.map_width.max(1) as f32;
-        let map_h = tile_map.map_height.max(1) as f32;
-        let base_cell = (rect.width() / map_w).min(rect.height() / map_h) * self.preview_zoom;
-        let cell = base_cell.clamp(4.0, 48.0);
-        let world_w = cell * map_w;
-        let world_h = cell * map_h;
-        let origin = egui::pos2(rect.center().x - world_w * 0.5, rect.center().y - world_h * 0.5);
+        let (map_width, map_height, cell, origin) = self.world_preview_layout(rect);
+        let world_w = cell * map_width as f32;
+        let world_h = cell * map_height as f32;
 
         if pos.x < origin.x || pos.y < origin.y || pos.x >= origin.x + world_w || pos.y >= origin.y + world_h {
             return None;
@@ -2100,7 +3344,7 @@ impl StarlightRidgeEguiEditor {
 
         let x = ((pos.x - origin.x) / cell).floor() as u32;
         let y = ((pos.y - origin.y) / cell).floor() as u32;
-        if x < tile_map.map_width && y < tile_map.map_height {
+        if x < map_width && y < map_height {
             Some((x, y))
         } else {
             None
@@ -2108,36 +3352,36 @@ impl StarlightRidgeEguiEditor {
     }
 
     fn tile_id_at_map_cell(&self, x: u32, y: u32) -> Option<String> {
-        let tile_map = self.tile_map.as_ref()?;
-        let tile = tile_map
-            .tiles
-            .iter()
-            .rev()
-            .find(|tile| tile.x == x && tile.y == y)?;
-
-        self.active_tileset()?
-            .named_tiles
-            .iter()
-            .find(|entry| entry.x == tile.atlas_x && entry.y == tile.atlas_y)
-            .map(|entry| entry.id.clone())
+        let state = self.editor_map.as_ref()?;
+        for layer in state.layers.layers.iter().rev().filter(|layer| layer.visible) {
+            let Some(symbol) = layer_symbol_at(layer, x as usize, y as usize) else {
+                continue;
+            };
+            if is_empty_layer_symbol(symbol) {
+                continue;
+            }
+            if let Some(tile_id) = layer_tile_for_symbol(layer, symbol) {
+                return Some(tile_id);
+            }
+        }
+        None
     }
+
 }
 
 impl eframe::App for StarlightRidgeEguiEditor {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        apply_editor_theme(ctx);
-        self.handle_shortcuts(ctx);
-        self.draw_top_bar(ctx);
-        self.draw_left_panel(ctx);
-        self.draw_right_panel(ctx);
-        self.draw_status_bar(ctx);
-        self.draw_bottom_panel(ctx);
-        self.draw_center_panel(ctx);
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        apply_editor_theme(&ctx);
+        self.handle_shortcuts(&ctx);
+        self.draw_top_bar(&ctx);
+        self.draw_left_panel(&ctx);
+        self.draw_right_panel(&ctx);
+        self.draw_status_bar(&ctx);
+        self.draw_bottom_panel(&ctx);
+        self.draw_center_panel(&ctx);
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
-        self.update(ui.ctx(), frame);
-    }
 }
 
 fn apply_editor_theme(ctx: &egui::Context) {

@@ -1,0 +1,39 @@
+(
+    map_id: "starter_farm",
+    active_profile: "farm_day_default",
+    profiles: [
+        (
+            id: "farm_day_default",
+            display_name: "Farm Day Default",
+            time_of_day: "day",
+            ambient_strength: 0.88,
+            sun_yaw_degrees: 35.0,
+            sun_pitch_degrees: 55.0,
+            shadow_strength: 0.25,
+            weather_modifier: "clear",
+        ),
+        (
+            id: "farm_evening_preview",
+            display_name: "Farm Evening Preview",
+            time_of_day: "evening",
+            ambient_strength: 0.55,
+            sun_yaw_degrees: 220.0,
+            sun_pitch_degrees: 18.0,
+            shadow_strength: 0.45,
+            weather_modifier: "clear",
+        ),
+        (
+            id: "farm_night_preview",
+            display_name: "Farm Night Preview",
+            time_of_day: "night",
+            ambient_strength: 0.22,
+            sun_yaw_degrees: 0.0,
+            sun_pitch_degrees: -10.0,
+            shadow_strength: 0.65,
+            weather_modifier: "moonlight",
+        ),
+    ],
+    notes: [
+        "Phase 51i scaffold for World → Lighting / Time and Render → Lighting Studio.",
+    ],
+)

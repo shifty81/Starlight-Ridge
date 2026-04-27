@@ -14,10 +14,6 @@ const state = {
   zoom: 2,
   presentationMode: localStorage.getItem('starlight.web.presentationMode') || 'auto',
   workspace: 'world',
-  mobileToolsOpen: false,
-  activePointers: new Map(),
-  touchGesture: null,
-  lastPaintTileKey: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -31,61 +27,22 @@ function setStatus(text, good = true) {
   el.className = good ? 'statusGood' : 'statusBad';
 }
 
-function resolvedPresentationMode(mode) {
-  if (mode === 'pc' || mode === 'tablet' || mode === 'mobile') return mode;
-  if (window.innerWidth <= 720) return 'mobile';
-  if (window.innerWidth <= 1100) return 'tablet';
-  return 'pc';
-}
-
 function preferredPresentationMode() {
   const query = new URLSearchParams(location.search);
   const explicit = query.get('mode');
-  if (explicit === 'pc' || explicit === 'tablet' || explicit === 'mobile') return explicit;
-  return resolvedPresentationMode(state.presentationMode);
+  if (explicit === 'pc' || explicit === 'tablet') return explicit;
+  if (state.presentationMode === 'pc' || state.presentationMode === 'tablet') return state.presentationMode;
+  return window.innerWidth <= 1100 ? 'tablet' : 'pc';
 }
 
 function applyPresentationMode(mode, persist = true) {
-  const resolved = resolvedPresentationMode(mode);
-  state.presentationMode = resolved;
-  if (persist) localStorage.setItem('starlight.web.presentationMode', resolved);
-  document.body.classList.toggle('presentation-tablet', resolved === 'tablet');
-  document.body.classList.toggle('presentation-pc', resolved === 'pc');
-  document.body.classList.toggle('presentation-mobile', resolved === 'mobile');
-  $('pcModeButton')?.classList.toggle('active', resolved === 'pc');
-  $('tabletModeButton')?.classList.toggle('active', resolved === 'tablet');
-  $('mobileModeButton')?.classList.toggle('active', resolved === 'mobile');
-  if (resolved !== 'mobile') setMobileToolsOpen(false);
-  updateMobileControls();
+  state.presentationMode = mode;
+  if (persist) localStorage.setItem('starlight.web.presentationMode', mode);
+  document.body.classList.toggle('presentation-tablet', mode === 'tablet');
+  document.body.classList.toggle('presentation-pc', mode === 'pc');
+  $('pcModeButton')?.classList.toggle('active', mode === 'pc');
+  $('tabletModeButton')?.classList.toggle('active', mode === 'tablet');
   renderMap();
-}
-
-function shouldShowLauncher() {
-  const query = new URLSearchParams(location.search);
-  // Phase 51h: browsing to the LAN address opens the editor immediately.
-  // The launcher remains available from the View button or ?launcher=1.
-  if (query.get('launcher') === '1') return true;
-  return false;
-}
-
-function showLauncher() {
-  const launcher = $('entranceLauncher');
-  if (!launcher) return;
-  launcher.hidden = false;
-  document.body.classList.add('launcherActive');
-}
-
-function hideLauncher() {
-  const launcher = $('entranceLauncher');
-  if (!launcher) return;
-  launcher.hidden = true;
-  document.body.classList.remove('launcherActive');
-}
-
-function launchWithMode(mode, remember = true) {
-  applyPresentationMode(mode, remember);
-  if (remember) localStorage.setItem('starlight.web.launcherSeen', '1');
-  hideLauncher();
 }
 
 function setWorkspace(workspace) {
@@ -109,13 +66,8 @@ function setToolMode(mode, paintEnabled = null) {
     inspect: 'Inspect/select mode',
     paint: 'Brush paint mode',
     erase: 'Erase mode',
-    fill: 'Fill mode',
     eyedrop: 'Eyedropper mode',
   };
-  for (const button of document.querySelectorAll('[data-tool]')) {
-    button.classList.toggle('active', button.dataset.tool === mode);
-  }
-  updateMobileControls();
   setStatus(`${labels[mode] ?? mode}. Shortcuts: V inspect, B brush, E erase, I eyedrop, G grid, Ctrl+S save.`, true);
 }
 
@@ -131,30 +83,19 @@ async function apiJson(path, options = {}) {
 async function loadManifest() {
   state.manifest = await apiJson('/api/manifest');
   const select = $('mapSelect');
-  const mobileSelect = $('mobileMapSelect');
   select.innerHTML = '';
-  if (mobileSelect) mobileSelect.innerHTML = '';
   for (const mapId of state.manifest.maps) {
     const option = document.createElement('option');
     option.value = mapId;
     option.textContent = mapId;
     select.appendChild(option);
-
-    if (mobileSelect) {
-      const mobileOption = document.createElement('option');
-      mobileOption.value = mapId;
-      mobileOption.textContent = mapId;
-      mobileSelect.appendChild(mobileOption);
-    }
   }
   const preferred = state.manifest.maps.includes('starter_farm') ? 'starter_farm' : state.manifest.maps[0];
   select.value = preferred;
-  if (mobileSelect) mobileSelect.value = preferred;
   $('saveButton').disabled = !state.manifest.write_enabled;
-  if ($('mobileSaveButton')) $('mobileSaveButton').disabled = !state.manifest.write_enabled;
   setStatus(`${location.origin} — ${state.manifest.write_enabled ? 'repo save enabled' : 'read-only LAN mode'}`);
   const hint = $('lanHint');
-  if (hint) hint.textContent = `Open ${location.origin}/ from your phone/tablet. The editor automatically picks mobile, tablet, or PC layout. Use ?launcher=1 to pick manually.`;
+  if (hint) hint.textContent = `Open ${location.origin}/?mode=tablet from your tablet on the same network. Use ?mode=pc for desktop layout.`;
   await loadMap(preferred);
 }
 
@@ -172,7 +113,6 @@ async function loadMap(mapId) {
   buildLayerControls();
   buildPaintLayerSelect();
   buildPalette();
-  buildMobileControls();
   buildFileTabs();
   renderRaw('layers.ron');
   renderMap();
@@ -270,24 +210,14 @@ function buildLayerControls() {
 
 function buildPaintLayerSelect() {
   const select = $('paintLayerSelect');
-  const mobileSelect = $('mobileLayerSelect');
   select.innerHTML = '';
-  if (mobileSelect) mobileSelect.innerHTML = '';
   for (const layer of state.layers) {
     const option = document.createElement('option');
     option.value = layer.id;
     option.textContent = layer.id;
     select.appendChild(option);
-
-    if (mobileSelect) {
-      const mobileOption = document.createElement('option');
-      mobileOption.value = layer.id;
-      mobileOption.textContent = layer.id;
-      mobileSelect.appendChild(mobileOption);
-    }
   }
   select.value = state.selectedLayerId ?? '';
-  if (mobileSelect) mobileSelect.value = state.selectedLayerId ?? '';
 }
 
 function buildPalette() {
@@ -308,7 +238,6 @@ function buildPalette() {
     });
     palette.appendChild(button);
   }
-  buildMobilePalette();
 }
 
 function buildFileTabs() {
@@ -323,95 +252,6 @@ function buildFileTabs() {
     tabs.appendChild(button);
   }
 }
-
-function buildMobileControls() {
-  buildMobilePalette();
-  buildMobileLayerStrip();
-  updateMobileControls();
-}
-
-function buildMobilePalette() {
-  const strip = $('mobilePaletteStrip');
-  if (!strip) return;
-  strip.innerHTML = '';
-  const layer = selectedLayer();
-  if (!layer) return;
-  for (const entry of layer.legend) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = `${entry.symbol} ${entry.tileId}`;
-    button.title = entry.tileId;
-    button.classList.toggle('active', state.selectedSymbol === entry.symbol);
-    button.addEventListener('click', () => {
-      state.selectedSymbol = entry.symbol;
-      setToolMode('paint', true);
-      buildPalette();
-      updateMobileControls();
-    });
-    strip.appendChild(button);
-  }
-}
-
-function buildMobileLayerStrip() {
-  const strip = $('mobileLayerStrip');
-  if (!strip) return;
-  strip.innerHTML = '';
-  for (const layer of state.layers) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = `${state.visibleLayers.has(layer.id) ? '✓' : '○'} ${layer.id}`;
-    button.classList.toggle('active', state.visibleLayers.has(layer.id));
-    button.addEventListener('click', () => {
-      if (state.visibleLayers.has(layer.id)) state.visibleLayers.delete(layer.id);
-      else state.visibleLayers.add(layer.id);
-      buildLayerControls();
-      buildMobileLayerStrip();
-      renderMap();
-    });
-    strip.appendChild(button);
-  }
-}
-
-function updateMobileControls() {
-  const summary = $('mobileToolSummary');
-  if (summary) summary.textContent = `${state.mode} · zoom ${state.zoom}× · ${state.selectedLayerId ?? 'no layer'}`;
-  if ($('mobileZoomValue')) $('mobileZoomValue').textContent = `${Number(state.zoom).toFixed(state.zoom % 1 === 0 ? 0 : 2)}×`;
-  if ($('mobileMapSelect') && state.currentMapId) $('mobileMapSelect').value = state.currentMapId;
-  if ($('mobileLayerSelect') && state.selectedLayerId) $('mobileLayerSelect').value = state.selectedLayerId;
-  if ($('mobileSaveButton') && state.manifest) $('mobileSaveButton').disabled = !state.manifest.write_enabled;
-  for (const button of document.querySelectorAll('[data-mobile-tool]')) {
-    button.classList.toggle('active', button.dataset.mobileTool === state.mode);
-  }
-  $('mobileGridButton')?.classList.toggle('active', $('gridToggle')?.checked ?? false);
-}
-
-function setMobileToolsOpen(open) {
-  state.mobileToolsOpen = !!open;
-  document.body.classList.toggle('mobile-tools-open', state.mobileToolsOpen);
-  const sheet = $('mobileToolSheet');
-  if (sheet) sheet.hidden = !state.mobileToolsOpen;
-}
-
-function setZoom(value, centerEvent = null) {
-  const next = Math.max(0.5, Math.min(6, Number(value)));
-  state.zoom = Number(next.toFixed(2));
-  if ($('zoomSlider')) $('zoomSlider').value = state.zoom;
-  renderMap();
-
-  if (centerEvent && $('canvasScroller')) {
-    const scroller = $('canvasScroller');
-    const rect = scroller.getBoundingClientRect();
-    const cx = centerEvent.clientX - rect.left;
-    const cy = centerEvent.clientY - rect.top;
-    scroller.scrollLeft = Math.max(0, scroller.scrollLeft + cx * 0.02);
-    scroller.scrollTop = Math.max(0, scroller.scrollTop + cy * 0.02);
-  }
-}
-
-function nudgeZoom(delta) {
-  setZoom(Number(state.zoom) + delta);
-}
-
 
 function renderRaw(name) {
   const map = {
@@ -462,7 +302,6 @@ function renderMap() {
   }
 
   if ($('gridToggle').checked) drawGrid(tw, th);
-  updateMobileControls();
 }
 
 function drawGrid(tw, th) {
@@ -510,49 +349,12 @@ function paintTile(x, y) {
   if (x >= row.length) return;
   const symbol = state.mode === 'erase' ? '.' : state.selectedSymbol;
   if (!symbol) return;
-  if (row[x] === symbol) {
-    inspectTile(x, y);
-    return;
-  }
   layer.rows[y] = row.slice(0, x) + symbol + row.slice(x + 1);
   state.dirty = true;
   renderMap();
   renderRaw('layers.ron');
   inspectTile(x, y);
 }
-
-function fillTile(x, y) {
-  const layer = selectedLayer();
-  if (!layer || x < 0 || y < 0 || y >= layer.rows.length) return;
-  const row = layer.rows[y];
-  if (x >= row.length) return;
-  const targetSymbol = row[x];
-  const replacement = state.selectedSymbol;
-  if (!replacement || targetSymbol === replacement) return;
-
-  const width = row.length;
-  const height = layer.rows.length;
-  const rows = layer.rows.map(value => value.split(''));
-  const stack = [{ x, y }];
-  while (stack.length > 0) {
-    const point = stack.pop();
-    if (!point || point.x < 0 || point.y < 0 || point.y >= height || point.x >= width) continue;
-    if (rows[point.y][point.x] !== targetSymbol) continue;
-    rows[point.y][point.x] = replacement;
-    stack.push({ x: point.x + 1, y: point.y });
-    stack.push({ x: point.x - 1, y: point.y });
-    stack.push({ x: point.x, y: point.y + 1 });
-    stack.push({ x: point.x, y: point.y - 1 });
-  }
-
-  layer.rows = rows.map(value => value.join(''));
-  state.dirty = true;
-  renderMap();
-  renderRaw('layers.ron');
-  inspectTile(x, y);
-  updateMobileControls();
-}
-
 
 function eyedropTile(x, y) {
   const layer = selectedLayer();
@@ -562,7 +364,6 @@ function eyedropTile(x, y) {
     state.selectedSymbol = symbol;
     state.mode = 'paint';
     buildPalette();
-    updateMobileControls();
   }
   inspectTile(x, y);
 }
@@ -637,35 +438,23 @@ $('paintLayerSelect').addEventListener('change', event => {
   state.selectedLayerId = event.target.value;
   state.selectedSymbol = selectedLayer()?.legend?.[0]?.symbol ?? null;
   buildPalette();
-  buildMobileControls();
 });
 $('zoomSlider').addEventListener('input', event => {
-  setZoom(event.target.value);
+  state.zoom = Number(event.target.value);
+  renderMap();
 });
 $('gridToggle').addEventListener('change', renderMap);
 $('reloadButton').addEventListener('click', () => loadMap(state.currentMapId).catch(showError));
 $('exportButton').addEventListener('click', () => downloadText(`${state.currentMapId}_layers.ron`, serializeLayersRon()));
 $('saveButton').addEventListener('click', () => saveLayers().catch(showError));
-for (const button of document.querySelectorAll('[data-tool]')) {
-  button.addEventListener('click', () => {
-    const tool = button.dataset.tool;
-    if (tool === 'eyedrop' || tool === 'inspect') setToolMode(tool, false);
-    else setToolMode(tool, true);
-  });
-}
+$('eraseButton').addEventListener('click', () => setToolMode('erase', true));
+$('eyedropButton').addEventListener('click', () => setToolMode('eyedrop', false));
 $('tabletPaintButton')?.addEventListener('click', () => setToolMode('paint', true));
 $('tabletInspectButton')?.addEventListener('click', () => setToolMode('inspect', false));
 $('tabletEraseButton')?.addEventListener('click', () => setToolMode('erase', true));
 $('tabletEyedropButton')?.addEventListener('click', () => setToolMode('eyedrop', false));
 $('pcModeButton')?.addEventListener('click', () => applyPresentationMode('pc'));
 $('tabletModeButton')?.addEventListener('click', () => applyPresentationMode('tablet'));
-$('mobileModeButton')?.addEventListener('click', () => applyPresentationMode('mobile'));
-$('viewLauncherButton')?.addEventListener('click', showLauncher);
-$('launcherSkipButton')?.addEventListener('click', () => launchWithMode(preferredPresentationMode(), false));
-for (const button of document.querySelectorAll('[data-launch-mode]')) {
-  button.addEventListener('click', () => launchWithMode(button.dataset.launchMode, $('rememberLauncherChoice')?.checked ?? true));
-}
-
 for (const button of document.querySelectorAll('.workspaceTabs button')) {
   button.addEventListener('click', () => setWorkspace(button.dataset.workspace));
 }
@@ -673,32 +462,6 @@ window.addEventListener('resize', () => {
   if (state.presentationMode === 'auto') applyPresentationMode(preferredPresentationMode(), false);
 });
 
-
-
-$('mobileMapSelect')?.addEventListener('change', event => {
-  $('mapSelect').value = event.target.value;
-  loadMap(event.target.value).catch(showError);
-});
-$('mobileLayerSelect')?.addEventListener('change', event => {
-  $('paintLayerSelect').value = event.target.value;
-  state.selectedLayerId = event.target.value;
-  state.selectedSymbol = selectedLayer()?.legend?.[0]?.symbol ?? null;
-  buildPalette();
-  buildMobileControls();
-});
-$('mobilePaintButton')?.addEventListener('click', () => setToolMode('paint', true));
-$('mobileEraseButton')?.addEventListener('click', () => setToolMode('erase', true));
-$('mobileFillButton')?.addEventListener('click', () => setToolMode('fill', true));
-$('mobilePickButton')?.addEventListener('click', () => setToolMode('eyedrop', false));
-$('mobileToolsButton')?.addEventListener('click', () => setMobileToolsOpen(!state.mobileToolsOpen));
-$('mobileCloseToolsButton')?.addEventListener('click', () => setMobileToolsOpen(false));
-$('mobileSaveButton')?.addEventListener('click', () => saveLayers().catch(showError));
-$('mobileZoomOutButton')?.addEventListener('click', () => nudgeZoom(-0.25));
-$('mobileZoomInButton')?.addEventListener('click', () => nudgeZoom(0.25));
-$('mobileGridButton')?.addEventListener('click', () => {
-  $('gridToggle').checked = !$('gridToggle').checked;
-  renderMap();
-});
 
 window.addEventListener('keydown', event => {
   const target = event.target;
@@ -711,162 +474,51 @@ window.addEventListener('keydown', event => {
     if (!$('saveButton').disabled) saveLayers().catch(showError);
     return;
   }
-  if ((event.ctrlKey || event.metaKey) && key === 'e') {
-    event.preventDefault();
-    downloadText(`${state.currentMapId}_layers.ron`, serializeLayersRon());
-    return;
-  }
-  if ((event.ctrlKey || event.metaKey) && key === 'r') {
-    event.preventDefault();
-    loadMap(state.currentMapId).catch(showError);
-    return;
-  }
 
-  if (key === '1' || key === 'p') {
-    event.preventDefault();
-    setToolMode('paint', true);
-  } else if (key === '2' || key === 'e') {
-    event.preventDefault();
-    setToolMode('erase', true);
-  } else if (key === '3' || key === 'f') {
-    event.preventDefault();
-    setToolMode('fill', true);
-  } else if (key === '4' || key === 'i') {
-    event.preventDefault();
-    setToolMode('eyedrop', false);
-  } else if (key === '5' || key === 'q' || key === 'escape') {
+  if (key === 'v') {
     event.preventDefault();
     setToolMode('inspect', false);
   } else if (key === 'b') {
     event.preventDefault();
-    $('brushDrawer')?.classList.toggle('open');
+    setToolMode('paint', true);
+  } else if (key === 'e') {
+    event.preventDefault();
+    setToolMode('erase', true);
+  } else if (key === 'i') {
+    event.preventDefault();
+    setToolMode('eyedrop', false);
   } else if (key === 'g') {
     event.preventDefault();
     $('gridToggle').checked = !$('gridToggle').checked;
     renderMap();
-  } else if (key === ']' || key === '=' || key === '+') {
+  } else if (key === '=' || key === '+') {
     event.preventDefault();
-    setZoom(state.zoom + 0.25);
-  } else if (key === '[' || key === '-' || key === '_') {
+    state.zoom = Math.min(4, state.zoom + 0.25);
+    $('zoomSlider').value = state.zoom;
+    renderMap();
+  } else if (key === '-' || key === '_') {
     event.preventDefault();
-    setZoom(state.zoom - 0.25);
-  } else if (key === 'r') {
+    state.zoom = Math.max(1, state.zoom - 0.25);
+    $('zoomSlider').value = state.zoom;
+    renderMap();
+  } else if (key === 'r' && !event.ctrlKey && !event.metaKey) {
     event.preventDefault();
     loadMap(state.currentMapId).catch(showError);
   }
-
 });
 
-function performCanvasAction(event, drag = false) {
-  const { x, y } = canvasTileFromEvent(event);
-  const key = `${x},${y}`;
-  if (drag && state.lastPaintTileKey === key) return;
-  state.lastPaintTileKey = key;
-
-  if (state.mode === 'eyedrop') {
-    if (!drag) eyedropTile(x, y);
-  } else if (state.mode === 'fill') {
-    if (!drag) fillTile(x, y);
-  } else if ($('paintToggle').checked || state.mode === 'paint' || state.mode === 'erase') {
-    paintTile(x, y);
-  } else {
-    inspectTile(x, y);
-  }
-}
-
-function pointerDistance(a, b) {
-  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-}
-
-function pointerCenter(a, b) {
-  return {
-    clientX: (a.clientX + b.clientX) / 2,
-    clientY: (a.clientY + b.clientY) / 2,
-  };
-}
-
-function startTouchGesture() {
-  if (state.activePointers.size < 2) {
-    state.touchGesture = null;
-    return;
-  }
-  const [a, b] = Array.from(state.activePointers.values());
-  const scroller = $('canvasScroller');
-  state.touchGesture = {
-    distance: Math.max(1, pointerDistance(a, b)),
-    zoom: state.zoom,
-    center: pointerCenter(a, b),
-    scrollLeft: scroller?.scrollLeft ?? 0,
-    scrollTop: scroller?.scrollTop ?? 0,
-  };
-}
-
-function updateTouchGesture() {
-  if (!state.touchGesture || state.activePointers.size < 2) return;
-  const [a, b] = Array.from(state.activePointers.values());
-  const distance = Math.max(1, pointerDistance(a, b));
-  const center = pointerCenter(a, b);
-  const nextZoom = state.touchGesture.zoom * (distance / state.touchGesture.distance);
-  setZoom(nextZoom);
-
-  const scroller = $('canvasScroller');
-  if (scroller) {
-    scroller.scrollLeft = state.touchGesture.scrollLeft - (center.clientX - state.touchGesture.center.clientX);
-    scroller.scrollTop = state.touchGesture.scrollTop - (center.clientY - state.touchGesture.center.clientY);
-  }
-}
-
 canvas.addEventListener('pointerdown', event => {
-  if (!state.tileset) return;
-  canvas.setPointerCapture?.(event.pointerId);
-  state.activePointers.set(event.pointerId, {
-    clientX: event.clientX,
-    clientY: event.clientY,
-  });
-  state.lastPaintTileKey = null;
-
-  if (state.activePointers.size >= 2) {
-    event.preventDefault();
-    startTouchGesture();
-    return;
-  }
-
-  event.preventDefault();
-  performCanvasAction(event, false);
+  const { x, y } = canvasTileFromEvent(event);
+  if (state.mode === 'eyedrop') eyedropTile(x, y);
+  else if ($('paintToggle').checked) paintTile(x, y);
+  else inspectTile(x, y);
 });
 
 canvas.addEventListener('pointermove', event => {
-  if (!state.activePointers.has(event.pointerId)) return;
-  state.activePointers.set(event.pointerId, {
-    clientX: event.clientX,
-    clientY: event.clientY,
-  });
-
-  if (state.activePointers.size >= 2) {
-    event.preventDefault();
-    updateTouchGesture();
-    return;
-  }
-
-  if (event.buttons !== 1 && event.pointerType === 'mouse') return;
-  if (state.mode === 'eyedrop' || state.mode === 'fill' || state.mode === 'inspect') return;
-  event.preventDefault();
-  performCanvasAction(event, true);
+  if (event.buttons !== 1 || !$('paintToggle').checked || state.mode === 'eyedrop') return;
+  const { x, y } = canvasTileFromEvent(event);
+  paintTile(x, y);
 });
-
-function endCanvasPointer(event) {
-  state.activePointers.delete(event.pointerId);
-  state.lastPaintTileKey = null;
-  if (state.activePointers.size >= 2) startTouchGesture();
-  else state.touchGesture = null;
-}
-
-canvas.addEventListener('pointerup', endCanvasPointer);
-canvas.addEventListener('pointercancel', endCanvasPointer);
-canvas.addEventListener('pointerleave', event => {
-  if (event.pointerType === 'mouse') endCanvasPointer(event);
-});
-
 
 function showError(error) {
   console.error(error);
@@ -875,6 +527,4 @@ function showError(error) {
 
 applyPresentationMode(preferredPresentationMode(), false);
 setWorkspace('world');
-setToolMode('paint', true);
-if (shouldShowLauncher()) showLauncher();
 loadManifest().catch(showError);

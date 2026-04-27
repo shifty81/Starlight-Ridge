@@ -276,6 +276,10 @@ pub fn validate_registry(registry: &ContentRegistry) -> anyhow::Result<()> {
         }
     }
 
+    if registry.has_phase51_world_contracts() {
+        validate_phase51_world_contracts(registry)?;
+    }
+
     Ok(())
 }
 
@@ -790,5 +794,91 @@ fn validate_animation_frame_index(
         frame_index,
         clip_id
     );
+    Ok(())
+}
+
+fn validate_phase51_world_contracts(registry: &ContentRegistry) -> anyhow::Result<()> {
+    for manifest in registry.world_manifests.values() {
+        ensure!(!manifest.id.trim().is_empty(), "world manifest has empty id");
+        ensure!(
+            manifest.scene(&manifest.default_start_scene).is_some(),
+            "world manifest '{}' default_start_scene '{}' is missing",
+            manifest.id,
+            manifest.default_start_scene
+        );
+
+        for issue in manifest.validate_basic() {
+            ensure!(
+                issue.severity != shared_types::ValidationSeverity::Error,
+                "world manifest '{}' validation error at {}: {}",
+                manifest.id,
+                issue.target,
+                issue.message
+            );
+        }
+
+        for region in &manifest.regions {
+            ensure!(!region.id.trim().is_empty(), "world manifest '{}' has region with empty id", manifest.id);
+            for scene_id in &region.scene_ids {
+                ensure!(
+                    manifest.scene(scene_id).is_some(),
+                    "world manifest '{}' region '{}' references missing scene '{}'",
+                    manifest.id,
+                    region.id,
+                    scene_id
+                );
+            }
+        }
+
+        for scene in &manifest.scenes {
+            ensure!(scene.width > 0 && scene.height > 0, "scene '{}' has invalid dimensions", scene.id);
+            ensure!(scene.tile_size > 0, "scene '{}' has zero tile_size", scene.id);
+            ensure!(
+                !scene.layer_stack.layers.is_empty(),
+                "scene '{}' has an empty layer stack",
+                scene.id
+            );
+            ensure!(
+                !scene.generation.protected_policy_id.trim().is_empty(),
+                "scene '{}' has empty protected_policy_id",
+                scene.id
+            );
+        }
+    }
+
+    for workflow in registry.worldgen_editor_workflows.values() {
+        ensure!(!workflow.id.trim().is_empty(), "worldgen editor workflow has empty id");
+        ensure!(
+            registry.world_manifests.contains_key(&workflow.active_world_manifest),
+            "worldgen editor workflow '{}' references missing world manifest '{}'",
+            workflow.id,
+            workflow.active_world_manifest
+        );
+        ensure!(
+            !workflow.preview_panels.is_empty(),
+            "worldgen editor workflow '{}' has no preview panels",
+            workflow.id
+        );
+    }
+
+    for draft in registry.generated_scene_drafts.values() {
+        ensure!(!draft.id.trim().is_empty(), "generated scene draft has empty id");
+        ensure!(
+            registry.world_manifests.contains_key(&draft.source_world_manifest),
+            "generated scene draft '{}' references missing source world manifest '{}'",
+            draft.id,
+            draft.source_world_manifest
+        );
+    }
+
+    for bake in registry.scene_bake_contracts.values() {
+        ensure!(!bake.id.trim().is_empty(), "scene bake contract has empty id");
+        ensure!(
+            !bake.target_map_dir.trim().is_empty(),
+            "scene bake contract '{}' has empty target_map_dir",
+            bake.id
+        );
+    }
+
     Ok(())
 }

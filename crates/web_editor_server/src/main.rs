@@ -36,17 +36,10 @@ fn main() {
     println!(" Write mode: {}", if write_enabled { "ENABLED" } else { "read-only" });
     println!("----------------------------------------");
     println!(" Open on this PC:     http://127.0.0.1:{port}/");
-    println!(" View picker:         http://127.0.0.1:{port}/?launcher=1");
     if let Some(ip) = local_lan_ip() {
-        println!(" Open on phone/LAN:  http://{ip}:{port}/");
-        println!(" Force tablet mode:  http://{ip}:{port}/?mode=tablet");
-        println!(" Force mobile mode:  http://{ip}:{port}/?mode=mobile");
-        println!(" Open view picker:   http://{ip}:{port}/?launcher=1");
+        println!(" Open on tablet/LAN: http://{ip}:{port}/");
     } else {
-        println!(" Open on phone/LAN:  http://<this-PC-LAN-IP>:{port}/");
-        println!(" Force tablet mode:  http://<this-PC-LAN-IP>:{port}/?mode=tablet");
-        println!(" Force mobile mode:  http://<this-PC-LAN-IP>:{port}/?mode=mobile");
-        println!(" Open view picker:   http://<this-PC-LAN-IP>:{port}/?launcher=1");
+        println!(" Open on tablet/LAN: http://<this-PC-LAN-IP>:{port}/");
     }
     println!("----------------------------------------");
     println!(" If your tablet cannot connect, allow this port through Windows Firewall.");
@@ -218,10 +211,8 @@ fn serve_manifest(stream: &mut TcpStream, root: &Path, write_enabled: bool, requ
     let maps_json = maps.iter().map(|value| format!("\"{}\"", json_escape(value))).collect::<Vec<_>>().join(",");
     let tilesets_json = tilesets.iter().map(|value| format!("\"{}\"", json_escape(value))).collect::<Vec<_>>().join(",");
     let json = format!(
-        "{{\"project\":\"Starlight Ridge\",\"write_enabled\":{},\"mode\":\"lan_companion\",\"pc_url\":\"http://{}?mode=pc\",\"tablet_url\":\"http://{}?mode=tablet\",\"mobile_url\":\"http://{}?mode=mobile\",\"launcher_url\":\"http://{}?launcher=1\",\"maps\":[{}],\"tilesets\":[{}]}}",
+        "{{\"project\":\"Starlight Ridge\",\"write_enabled\":{},\"mode\":\"lan_companion\",\"pc_url\":\"http://{}?mode=pc\",\"tablet_url\":\"http://{}?mode=tablet\",\"maps\":[{}],\"tilesets\":[{}]}}",
         write_enabled,
-        json_escape(request_host),
-        json_escape(request_host),
         json_escape(request_host),
         json_escape(request_host),
         maps_json,
@@ -237,11 +228,9 @@ fn serve_server_info(
     request_host: &str,
 ) -> std::io::Result<()> {
     let json = format!(
-        "{{\"project\":\"Starlight Ridge\",\"mode\":\"lan_companion\",\"write_enabled\":{},\"root\":\"{}\",\"pc_url\":\"http://{}?mode=pc\",\"tablet_url\":\"http://{}?mode=tablet\",\"mobile_url\":\"http://{}?mode=mobile\",\"launcher_url\":\"http://{}?launcher=1\"}}",
+        "{{\"project\":\"Starlight Ridge\",\"mode\":\"lan_companion\",\"write_enabled\":{},\"root\":\"{}\",\"pc_url\":\"http://{}?mode=pc\",\"tablet_url\":\"http://{}?mode=tablet\"}}",
         write_enabled,
         json_escape(&root.display().to_string()),
-        json_escape(request_host),
-        json_escape(request_host),
         json_escape(request_host),
         json_escape(request_host)
     );

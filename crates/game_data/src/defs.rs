@@ -615,3 +615,153 @@ pub struct AnimationValidationReportDef {
     pub enabled: bool,
     pub checks: Vec<String>,
 }
+
+// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Phase 51i hybrid 2D/3D world, presentation, and render pipeline definitions
+// -----------------------------------------------------------------------------
+//
+// These definitions keep Starlight Ridge authored as a readable gameplay grid
+// while allowing the same scene to carry height/elevation, 3D object placement,
+// presentation camera profiles, and render/bake metadata. The current runtime can
+// continue using the 2D tile layers while the editor grows 2.5D/3D preview and
+// baking workflows around the same map id.
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum SceneRenderModeDef {
+    Tile2D,
+    Hybrid2_5D,
+    Scene3D,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeightMapDef {
+    pub map_id: String,
+    pub width: u32,
+    pub height: u32,
+    pub cell_size: f32,
+    pub default_height: i16,
+    pub min_height: i16,
+    pub max_height: i16,
+    pub values: Vec<i16>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Scene3DDef {
+    pub map_id: String,
+    pub coordinate_space: String,
+    pub units_per_tile: f32,
+    pub objects: Vec<SceneObject3DDef>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SceneObject3DDef {
+    pub id: String,
+    pub asset_id: String,
+    pub source_kind: SceneAssetSourceKindDef,
+    pub visual_mode: SceneObjectVisualModeDef,
+    pub cell_x: u32,
+    pub cell_y: u32,
+    pub offset_x: f32,
+    pub offset_y: f32,
+    pub offset_z: f32,
+    pub rotation_degrees: f32,
+    pub scale: f32,
+    pub collision_cells: Vec<GridCellDef>,
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum SceneAssetSourceKindDef {
+    Sprite2D,
+    Vox,
+    Blockbench,
+    Blender,
+    Gltf,
+    GeneratedBake,
+    Placeholder,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum SceneObjectVisualModeDef {
+    SpriteBillboard,
+    BakedSprite,
+    Live3D,
+    HybridProxy,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GridCellDef {
+    pub x: u32,
+    pub y: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PresentationDef {
+    pub map_id: String,
+    pub default_mode: SceneRenderModeDef,
+    pub depth_sorting: bool,
+    pub sprite_billboarding: bool,
+    pub pixel_snap: bool,
+    pub active_camera_profile: String,
+    pub camera_profiles: Vec<CameraProfileDef>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CameraProfileDef {
+    pub id: String,
+    pub display_name: String,
+    pub mode: SceneRenderModeDef,
+    pub pitch_degrees: f32,
+    pub yaw_degrees: f32,
+    pub orthographic_scale: f32,
+    pub perspective_fov_degrees: f32,
+    pub near_clip: f32,
+    pub far_clip: f32,
+    pub pixel_snap: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LightingProfileDef {
+    pub map_id: String,
+    pub active_profile: String,
+    pub profiles: Vec<LightingProfileEntryDef>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LightingProfileEntryDef {
+    pub id: String,
+    pub display_name: String,
+    pub time_of_day: String,
+    pub ambient_strength: f32,
+    pub sun_yaw_degrees: f32,
+    pub sun_pitch_degrees: f32,
+    pub shadow_strength: f32,
+    pub weather_modifier: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HybridWorldEditorPipelineDef {
+    pub id: String,
+    pub display_name: String,
+    pub default_render_mode: SceneRenderModeDef,
+    pub world_subtabs: Vec<String>,
+    pub asset_subtabs: Vec<String>,
+    pub render_subtabs: Vec<String>,
+    pub external_tool_targets: Vec<String>,
+    pub automation_goals: Vec<String>,
+    pub notes: Vec<String>,
+}
+
+// Phase 51 world graph / scene-layer registry definitions
+// -----------------------------------------------------------------------------
+
+pub type WorldManifestDef = shared_types::WorldManifest;
+pub type WorldgenEditorWorkflowDef = shared_types::WorldgenEditorWorkflow;
+pub type ProtectedLayerPolicyDef = shared_types::ProtectedLayerPolicy;
+pub type GeneratedSceneDraftDef = shared_types::GeneratedSceneDraft;
+pub type SceneBakeContractDef = shared_types::SceneBakeContract;

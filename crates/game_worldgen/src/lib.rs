@@ -4,8 +4,6 @@
 //! coordinates. The autotile resolver remains responsible for converting these
 //! semantic roles into renderable tile IDs.
 
-pub mod phase52_contracts;
-
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;

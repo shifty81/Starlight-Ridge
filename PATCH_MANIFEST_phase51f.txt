@@ -1,0 +1,23 @@
+Starlight_Ridge_phase51f_egui_world_layer_editor_real_paint_save.zip
+
+Phase 51f patch focus:
+- egui-only real World tab map layer painting/saving
+- mutable EditorMapState for content/maps/<map_id>/layers.ron
+- selected layer + selected symbol/tile state
+- brush, erase, fill, and pick against actual layer row strings
+- drag painting for brush/erase
+- dirty state + Ctrl+S save route for map layers
+- backup layers.ron before save
+- reload/rebuild preview after save
+- real map layer validation issues in bottom Validation tab
+- static bottom status bar retained with layer dirty/clean state
+
+Changed files:
+- crates/app/src/egui_editor.rs
+- crates/game_data/src/loader.rs
+- content/maps/starter_farm/layers.ron
+- docs/PHASE51F_EGUI_WORLD_LAYER_EDITOR.md
+- PATCH_MANIFEST_phase51f.txt
+
+Next recommended patch:
+Starlight_Ridge_phase51g_egui_real_atlas_tile_picker.zip

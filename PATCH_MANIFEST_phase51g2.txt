@@ -1,0 +1,22 @@
+Starlight Ridge Phase 51g2 Patch Manifest
+=========================================
+
+Patch: phase51g2_egui_vox_app_trait_fix
+Date: 2026-04-27
+
+Purpose:
+- Resolve the next cargo check errors reported after Phase 51g/51g1.
+
+Changed files:
+- crates/engine_assets/src/lib.rs
+- crates/app/src/egui_editor.rs
+- docs/patches/README_PATCH_PHASE51G2_EGUI_VOX_APP_TRAIT_FIX.md
+- PATCH_MANIFEST_phase51g2.txt
+
+Fixes:
+- Exports engine_assets::vox.
+- Updates StarlightRidgeEguiEditor's eframe::App implementation to the new required ui() entry point in eframe 0.34.1.
+
+Validation:
+- Source patch prepared against the integrated Phase 51g1 source.
+- cargo check could not be run inside this container because Cargo is not installed here.

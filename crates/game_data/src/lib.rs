@@ -136,6 +136,42 @@ pub fn load_registry(project_root: impl AsRef<Path>) -> anyhow::Result<ContentRe
         registry.editor_animation_pipelines.insert(def.id.clone(), def);
     }
 
+    for path in ron_files_in(&content_root.join("editor_hybrid_world"))? {
+        let def = load_hybrid_world_editor_pipeline(&path)?;
+        registry.hybrid_world_editor_pipelines.insert(def.id.clone(), def);
+    }
+
+    // Phase 51: load the canonical world/scene/layer architecture contracts.
+    // These are intentionally loaded by stable filenames/directories so older
+    // phase48 exploratory files can remain in content/worldgen without breaking
+    // the runtime registry.
+    let worldgen_root = content_root.join("worldgen");
+    let world_manifest_path = worldgen_root.join("world_manifest_phase51.ron");
+    if world_manifest_path.exists() {
+        let def = load_world_manifest(&world_manifest_path)?;
+        registry.world_manifests.insert(def.id.clone(), def);
+    }
+    for path in ron_files_in(&worldgen_root.join("protected_layer_policies"))? {
+        let def = load_protected_layer_policy(&path)?;
+        registry.protected_layer_policies.insert(def.id.clone(), def);
+    }
+    for path in ron_files_in(&worldgen_root.join("generated_drafts"))? {
+        let def = load_generated_scene_draft(&path)?;
+        registry.generated_scene_drafts.insert(def.id.clone(), def);
+    }
+    for path in ron_files_in(&worldgen_root.join("bake_contracts"))? {
+        let def = load_scene_bake_contract(&path)?;
+        registry.scene_bake_contracts.insert(def.id.clone(), def);
+    }
+
+    let editor_worldgen_workflow_path = content_root
+        .join("editor_worldgen")
+        .join("worldgen_editor_workflow_phase51.ron");
+    if editor_worldgen_workflow_path.exists() {
+        let def = load_worldgen_editor_workflow(&editor_worldgen_workflow_path)?;
+        registry.worldgen_editor_workflows.insert(def.id.clone(), def);
+    }
+
     let maps_root = content_root.join("maps");
     if maps_root.exists() {
         for entry in std::fs::read_dir(&maps_root)
@@ -158,7 +194,31 @@ pub fn load_registry(project_root: impl AsRef<Path>) -> anyhow::Result<ContentRe
             let layers_path = path.join("layers.ron");
             if layers_path.exists() {
                 let layers = load_map_layers(&layers_path)?;
-                registry.map_layers.insert(map_id, layers);
+                registry.map_layers.insert(map_id.clone(), layers);
+            }
+
+            let height_path = path.join("height.ron");
+            if height_path.exists() {
+                let height = load_height_map(&height_path)?;
+                registry.map_height_maps.insert(height.map_id.clone(), height);
+            }
+
+            let scene3d_path = path.join("scene3d.ron");
+            if scene3d_path.exists() {
+                let scene3d = load_scene3d(&scene3d_path)?;
+                registry.map_scene3d.insert(scene3d.map_id.clone(), scene3d);
+            }
+
+            let presentation_path = path.join("presentation.ron");
+            if presentation_path.exists() {
+                let presentation = load_presentation(&presentation_path)?;
+                registry.map_presentations.insert(presentation.map_id.clone(), presentation);
+            }
+
+            let lighting_path = path.join("lighting.ron");
+            if lighting_path.exists() {
+                let lighting = load_lighting_profile(&lighting_path)?;
+                registry.map_lighting_profiles.insert(lighting.map_id.clone(), lighting);
             }
         }
     }

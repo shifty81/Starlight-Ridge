@@ -1,0 +1,45 @@
+(
+    id: "phase51g_uploaded_human_character_concepts",
+    source_folder: "assets/art_source/character_concepts",
+    concepts: [
+        (
+            id: "uploaded_human_concept_01",
+            source: "assets/art_source/character_concepts/uploaded_human_concept_01.png",
+            original_upload: "34266456.PNG",
+            role: "human_character_reference",
+            target: "male_or_female_base_direction",
+            notes: "Use as a visual reference for Starlight Ridge human body proportions, clothing silhouette, and character style.",
+        ),
+        (
+            id: "uploaded_human_concept_02",
+            source: "assets/art_source/character_concepts/uploaded_human_concept_02.png",
+            original_upload: "456456.PNG",
+            role: "human_character_reference",
+            target: "male_or_female_base_direction",
+            notes: "Use as a visual reference for Starlight Ridge human body proportions, clothing silhouette, and character style.",
+        ),
+        (
+            id: "uploaded_human_concept_03",
+            source: "assets/art_source/character_concepts/uploaded_human_concept_03.png",
+            original_upload: "111.PNG",
+            role: "human_character_reference",
+            target: "male_or_female_base_direction",
+            notes: "Use as a visual reference for Starlight Ridge human base sprite and paperdoll layer planning.",
+        ),
+        (
+            id: "uploaded_human_concept_04",
+            source: "assets/art_source/character_concepts/uploaded_human_concept_04.png",
+            original_upload: "124132515.PNG",
+            role: "human_character_reference",
+            target: "male_or_female_base_direction",
+            notes: "Use as a visual reference for Starlight Ridge human base sprite and paperdoll layer planning.",
+        ),
+    ],
+    integration_status: "source_reference_only",
+    next_steps: [
+        "Create normalized male/female base gameplay spritesheets from the concepts.",
+        "Add walk/tool-use animation sheets.",
+        "Split clothing, hair, boots, and equipment into paperdoll overlays.",
+        "Preview and validate the converted assets in egui Character Studio.",
+    ],
+)

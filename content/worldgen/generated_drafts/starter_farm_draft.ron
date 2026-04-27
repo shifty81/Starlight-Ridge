@@ -1,0 +1,18 @@
+(
+    id: "starter_farm_draft",
+    source_world_manifest: "starlight_ridge_world",
+    scene_id: "starter_farm",
+    scene_kind: StarterFarm,
+    seed: 1777225201,
+    template_id: "starter_farm_coastal_peninsula_v1",
+    width: 96,
+    height: 96,
+    tile_size: 32,
+    layer_stack_id: "starter_farm_layer_stack",
+    semantic_layer_id: "semantic_terrain",
+    bake_contract_id: "starter_farm_bake_contract",
+    notes: [
+        "Initial phase51 registry draft marker; press Generate draft in the egui WorldGen tab to write a fresh semantic scene draft.",
+        "This record exists so the content registry can validate the draft/bake pipeline immediately after patch extraction.",
+    ],
+)
