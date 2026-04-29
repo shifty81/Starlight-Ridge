@@ -7,7 +7,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use anyhow::Context;
 use editor_undo::UndoStack;
 use eframe::egui;
-use engine_assets::vox::{VoxAssetInfo, scan_vox_files};
+use engine_assets::vox::{VoxAssetInfo, VoxModel, load_vox_file, scan_vox_files};
 use engine_render_gl::{TileInstance, TileMapRenderData};
 use game_data::defs::{
     LayerLegendEntry, MapLayersDef, TileLayerDef, TilesetDef, VoxelPanelBakedInstanceDef,
@@ -84,6 +84,7 @@ enum AssetSubTab {
     PixelEditor,
     VoxelPanels,
     Voxels,
+    VoxelGenerator,
     Props,
     Seasons,
 }
@@ -1640,6 +1641,7 @@ struct VoxelPanelDesignerState {
     selected_preview_export_index: usize,
     last_mesh_export_summary: Option<String>,
     last_mesh_export_path: Option<PathBuf>,
+    panel_undo: UndoStack<Vec<VoxelPanelDef>>,
 }
 
 impl VoxelPanelDesignerState {
@@ -1689,6 +1691,7 @@ impl VoxelPanelDesignerState {
             selected_preview_export_index: 0,
             last_mesh_export_summary: None,
             last_mesh_export_path: None,
+            panel_undo: UndoStack::new(60),
         };
         state.normalize_selection();
         state.refresh_preview_export_history(project_root);
@@ -1906,6 +1909,26 @@ impl VoxelPanelDesignerState {
             .iter()
             .flat_map(|palette| palette.materials.iter())
             .find(|material| material.id == material_id)
+    }
+
+    fn push_panel_undo(&mut self) {
+        self.panel_undo.push("panel edit", &self.kit.panels);
+    }
+
+    fn undo_panels(&mut self) -> Option<String> {
+        let result = self.panel_undo.undo("redo panel edit", &self.kit.panels)?;
+        self.kit.panels = result.value;
+        self.dirty = true;
+        self.normalize_selection();
+        Some(result.label)
+    }
+
+    fn redo_panels(&mut self) -> Option<String> {
+        let result = self.panel_undo.redo("undo panel edit", &self.kit.panels)?;
+        self.kit.panels = result.value;
+        self.dirty = true;
+        self.normalize_selection();
+        Some(result.label)
     }
 
     fn cell_at(&self, x: u32, y: u32, z: u32) -> Option<&VoxelPanelCellDef> {
@@ -4518,6 +4541,8 @@ struct StarlightRidgeEguiEditor {
     shell_render_depth: u8,
     vox_assets: Vec<VoxAssetInfo>,
     selected_vox_index: usize,
+    loaded_vox_cache: Option<(String, VoxModel)>,
+    generator_log: Vec<String>,
     pixel_editor: PixelEditorState,
     voxel_panel_designer: VoxelPanelDesignerState,
     worldgen_bake_preview: Option<WorldgenBakePreviewState>,
@@ -4607,6 +4632,8 @@ impl StarlightRidgeEguiEditor {
             shell_render_depth: 0,
             vox_assets,
             selected_vox_index: 0,
+            loaded_vox_cache: None,
+            generator_log: Vec::new(),
             pixel_editor,
             voxel_panel_designer,
             worldgen_bake_preview: None,
@@ -5204,6 +5231,9 @@ impl StarlightRidgeEguiEditor {
             WorkspaceTab::Assets if self.asset_subtab == AssetSubTab::PixelEditor => {
                 !self.pixel_editor.undo_stack.is_empty()
             }
+            WorkspaceTab::Assets if self.asset_subtab == AssetSubTab::VoxelPanels => {
+                self.voxel_panel_designer.panel_undo.can_undo()
+            }
             _ => false,
         }
     }
@@ -5217,6 +5247,9 @@ impl StarlightRidgeEguiEditor {
                 .unwrap_or(false),
             WorkspaceTab::Assets if self.asset_subtab == AssetSubTab::PixelEditor => {
                 !self.pixel_editor.redo_stack.is_empty()
+            }
+            WorkspaceTab::Assets if self.asset_subtab == AssetSubTab::VoxelPanels => {
+                self.voxel_panel_designer.panel_undo.can_redo()
             }
             _ => false,
         }
@@ -5232,6 +5265,13 @@ impl StarlightRidgeEguiEditor {
                     self.status = format!("Undid {label}.");
                 } else {
                     self.status = "No pixel edit to undo.".to_string();
+                }
+            }
+            WorkspaceTab::Assets if self.asset_subtab == AssetSubTab::VoxelPanels => {
+                if let Some(label) = self.voxel_panel_designer.undo_panels() {
+                    self.status = format!("Undid voxel panel edit: {label}.");
+                } else {
+                    self.status = "No voxel panel edit to undo.".to_string();
                 }
             }
             _ => {
@@ -5250,6 +5290,13 @@ impl StarlightRidgeEguiEditor {
                     self.status = "Redid pixel edit.".to_string();
                 } else {
                     self.status = "No pixel edit to redo.".to_string();
+                }
+            }
+            WorkspaceTab::Assets if self.asset_subtab == AssetSubTab::VoxelPanels => {
+                if let Some(label) = self.voxel_panel_designer.redo_panels() {
+                    self.status = format!("Redid voxel panel edit: {label}.");
+                } else {
+                    self.status = "No voxel panel edit to redo.".to_string();
                 }
             }
             _ => {
@@ -6654,6 +6701,11 @@ impl StarlightRidgeEguiEditor {
                     "Voxel Panels",
                 );
                 ui.selectable_value(&mut self.asset_subtab, AssetSubTab::Voxels, "VOX Models");
+                ui.selectable_value(
+                    &mut self.asset_subtab,
+                    AssetSubTab::VoxelGenerator,
+                    "Voxel Generator",
+                );
                 ui.selectable_value(&mut self.asset_subtab, AssetSubTab::Props, "Props");
                 ui.selectable_value(&mut self.asset_subtab, AssetSubTab::Seasons, "Seasons");
             }
@@ -8610,6 +8662,7 @@ impl StarlightRidgeEguiEditor {
             AssetSubTab::PixelEditor => self.draw_pixel_editor_workspace(ui),
             AssetSubTab::VoxelPanels => self.draw_voxel_panel_designer_workspace(ui),
             AssetSubTab::Voxels => self.draw_voxels_workspace(ui),
+            AssetSubTab::VoxelGenerator => self.draw_voxel_generator_workspace(ui),
             AssetSubTab::Props => self.draw_world_objects_workspace(ui),
             AssetSubTab::Seasons => self.draw_workspace_notes(
                 ui,
@@ -9594,6 +9647,7 @@ impl StarlightRidgeEguiEditor {
                 );
             }
             if ui.button("Paste layer").clicked() {
+                self.voxel_panel_designer.push_panel_undo();
                 let count = self.voxel_panel_designer.paste_cells_to_active_depth();
                 self.status = format!(
                     "Pasted {count} voxel-pixel cell(s) into depth layer {}.",
@@ -9601,6 +9655,7 @@ impl StarlightRidgeEguiEditor {
                 );
             }
             if ui.button("Clear layer").clicked() {
+                self.voxel_panel_designer.push_panel_undo();
                 let count = self.voxel_panel_designer.clear_active_depth_cells();
                 self.status = format!(
                     "Cleared {count} voxel-pixel cell(s) from depth layer {}.",
@@ -9615,14 +9670,17 @@ impl StarlightRidgeEguiEditor {
                 self.voxel_panel_designer.clipboard_cells.len()
             ));
             if ui.button("Mirror X").clicked() {
+                self.voxel_panel_designer.push_panel_undo();
                 let count = self.voxel_panel_designer.mirror_cells_x();
                 self.status = format!("Mirrored {count} voxel-pixel cell(s) on X.");
             }
             if ui.button("Mirror Y").clicked() {
+                self.voxel_panel_designer.push_panel_undo();
                 let count = self.voxel_panel_designer.mirror_cells_y();
                 self.status = format!("Mirrored {count} voxel-pixel cell(s) on Y.");
             }
             if ui.button("Rotate CW").clicked() {
+                self.voxel_panel_designer.push_panel_undo();
                 match self.voxel_panel_designer.rotate_cells_cw() {
                     Ok(count) => {
                         self.status = format!("Rotated {count} voxel-pixel cell(s) clockwise.")
@@ -9631,6 +9689,7 @@ impl StarlightRidgeEguiEditor {
                 }
             }
             if ui.button("Rotate CCW").clicked() {
+                self.voxel_panel_designer.push_panel_undo();
                 match self.voxel_panel_designer.rotate_cells_ccw() {
                     Ok(count) => {
                         self.status =
@@ -9701,11 +9760,15 @@ impl StarlightRidgeEguiEditor {
                 if x < panel.width && y < panel.height {
                     self.voxel_panel_designer.hover_cell = Some((x, y));
                     let should_apply = response.clicked() || response.dragged();
+                    let stroke_start = response.drag_started() || response.clicked();
                     if should_apply {
                         match self.voxel_panel_designer.tool {
                             VoxelPanelTool::Paint => {
                                 let material_id =
                                     self.voxel_panel_designer.selected_material_id.clone();
+                                if stroke_start {
+                                    self.voxel_panel_designer.push_panel_undo();
+                                }
                                 if self
                                     .voxel_panel_designer
                                     .set_cell(x, y, z, material_id.clone())
@@ -9717,6 +9780,9 @@ impl StarlightRidgeEguiEditor {
                                 }
                             }
                             VoxelPanelTool::Erase => {
+                                if stroke_start {
+                                    self.voxel_panel_designer.push_panel_undo();
+                                }
                                 if self.voxel_panel_designer.erase_cell(x, y, z) {
                                     action_status =
                                         Some(format!("Erased voxel-pixel {},{},{}.", x, y, z));
@@ -10355,11 +10421,12 @@ impl StarlightRidgeEguiEditor {
         self.draw_workspace_header(
             ui,
             "VOX Models",
-            "Phase 51f: MagicaVoxel .vox files are scanned from assets/voxels, assets/models, and content/voxels for editor/runtime asset use.",
+            "MagicaVoxel .vox files scanned from assets/voxels, assets/models, and content/voxels. Select a model to preview its voxel projection.",
         );
 
         ui.horizontal_wrapped(|ui| {
             if ui.button("Reload VOX assets").clicked() {
+                self.loaded_vox_cache = None;
                 match scan_vox_files(&self.project_root) {
                     Ok(assets) => {
                         self.vox_assets = assets;
@@ -10408,13 +10475,14 @@ impl StarlightRidgeEguiEditor {
                 });
             if let Some(index) = clicked_vox_index {
                 self.selected_vox_index = index;
+                self.loaded_vox_cache = None;
                 if let Some(asset) = self.vox_assets.get(index) {
                     self.status = format!("Selected VOX model {}.", asset.id);
                 }
             }
 
             columns[1].heading("Selected model");
-            if let Some(asset) = self.vox_assets.get(self.selected_vox_index) {
+            if let Some(asset) = self.vox_assets.get(self.selected_vox_index).cloned() {
                 egui::Grid::new("vox_model_details")
                     .striped(true)
                     .show(&mut columns[1], |ui| {
@@ -10436,9 +10504,183 @@ impl StarlightRidgeEguiEditor {
                     });
 
                 columns[1].separator();
-                columns[1].label("Current integration: discovery, validation-safe parsing, editor listing, and metadata summary.");
-                columns[1].label("Next step: add projection/bake tools so .vox models can become tile sprites, prop sprites, collision footprints, or preview thumbnails.");
+
+                let need_load = self
+                    .loaded_vox_cache
+                    .as_ref()
+                    .map(|(id, _)| id != &asset.id)
+                    .unwrap_or(true);
+                if need_load {
+                    match load_vox_file(&asset.absolute_path) {
+                        Ok(model) => {
+                            self.loaded_vox_cache = Some((asset.id.clone(), model));
+                        }
+                        Err(err) => {
+                            columns[1].label(format!("Failed to load preview: {err:#}"));
+                        }
+                    }
+                }
+
+                if let Some((_, model)) = self.loaded_vox_cache.as_ref() {
+                    let preview_size = egui::vec2(280.0, 280.0);
+                    let (preview_rect, _) = columns[1].allocate_exact_size(
+                        preview_size,
+                        egui::Sense::hover(),
+                    );
+                    let painter = columns[1].painter_at(preview_rect);
+                    painter.rect_filled(preview_rect, 4.0, egui::Color32::from_rgb(18, 22, 30));
+                    draw_vox_isometric_preview(&painter, preview_rect, model);
+                }
             }
+        });
+    }
+
+    fn draw_voxel_generator_workspace(&mut self, ui: &mut egui::Ui) {
+        self.draw_workspace_header(
+            ui,
+            "Voxel Generator",
+            "Generate and validate base character and tool .vox templates from built-in profiles.",
+        );
+
+        let profiles = voxel_generator::profiles::default_profiles();
+        let project_root = self.project_root.clone();
+
+        ui.horizontal_wrapped(|ui| {
+            if ui.button("Generate All Templates").clicked() {
+                match voxel_generator::generate_phase53b_templates(&project_root) {
+                    Ok(paths) => {
+                        let msg = format!("Generated {} .vox template(s).", paths.len());
+                        self.status = msg.clone();
+                        self.log(msg);
+                        for path in &paths {
+                            self.generator_log.push(format!("  ✓ {}", path.display()));
+                        }
+                        self.loaded_vox_cache = None;
+                    }
+                    Err(err) => {
+                        let msg = format!("Generation failed: {err:#}");
+                        self.status = msg.clone();
+                        self.log(msg.clone());
+                        self.generator_log.push(format!("  ✗ {msg}"));
+                    }
+                }
+            }
+            if ui.button("Clear Log").clicked() {
+                self.generator_log.clear();
+            }
+        });
+
+        ui.separator();
+
+        ui.columns(2, |columns| {
+            columns[0].heading("Generator Profiles");
+            egui::ScrollArea::vertical()
+                .id_salt("voxel_generator_profiles")
+                .max_height(400.0)
+                .show(&mut columns[0], |ui| {
+                    for profile in &profiles {
+                        let output_path = project_root.join(profile.output_path);
+                        let exists = output_path.exists();
+                        let file_size = if exists {
+                            std::fs::metadata(&output_path)
+                                .map(|m| format!("{} bytes", m.len()))
+                                .unwrap_or_else(|_| "?".to_string())
+                        } else {
+                            "missing".to_string()
+                        };
+                        let status_color = if exists {
+                            egui::Color32::from_rgb(100, 200, 120)
+                        } else {
+                            egui::Color32::from_rgb(200, 100, 80)
+                        };
+                        egui::Frame::group(ui.style())
+                            .fill(egui::Color32::from_rgb(22, 26, 35))
+                            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 60, 80)))
+                            .inner_margin(egui::Margin::symmetric(8, 6))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.colored_label(
+                                        status_color,
+                                        if exists { "✓" } else { "✗" },
+                                    );
+                                    ui.strong(profile.id);
+                                });
+                                ui.small(format!(
+                                    "Kind: {:?}  ·  Dims: {}×{}×{}",
+                                    profile.generator_kind,
+                                    profile.dimensions[0],
+                                    profile.dimensions[1],
+                                    profile.dimensions[2]
+                                ));
+                                ui.small(format!("Output: {}", profile.output_path));
+                                ui.small(format!("File: {file_size}"));
+                                if exists {
+                                    if let Some(validation) = validate_vox_profile(
+                                        &output_path,
+                                        profile.dimensions,
+                                    ) {
+                                        ui.colored_label(
+                                            egui::Color32::from_rgb(220, 160, 60),
+                                            format!("⚠ {validation}"),
+                                        );
+                                    } else {
+                                        ui.colored_label(
+                                            egui::Color32::from_rgb(100, 200, 120),
+                                            "Dimensions match profile.",
+                                        );
+                                    }
+                                }
+                                if ui.small_button("Generate this profile").clicked() {
+                                    let model = voxel_generator::vox_writer::placeholder_model(
+                                        profile.dimensions,
+                                        profile.generator_kind,
+                                    );
+                                    if let Some(parent) = output_path.parent() {
+                                        let _ = std::fs::create_dir_all(parent);
+                                    }
+                                    match std::fs::write(
+                                        &output_path,
+                                        voxel_generator::vox_writer::write_vox(&model)
+                                            .unwrap_or_default(),
+                                    ) {
+                                        Ok(()) => {
+                                            let msg = format!(
+                                                "Generated {}.",
+                                                profile.output_path
+                                            );
+                                            self.status = msg.clone();
+                                            self.generator_log.push(format!("  ✓ {msg}"));
+                                            self.loaded_vox_cache = None;
+                                        }
+                                        Err(err) => {
+                                            let msg = format!(
+                                                "Failed to write {}: {err:#}",
+                                                profile.output_path
+                                            );
+                                            self.status = msg.clone();
+                                            self.generator_log.push(format!("  ✗ {msg}"));
+                                        }
+                                    }
+                                }
+                            });
+                        ui.add_space(2.0);
+                    }
+                });
+
+            columns[1].heading("Generator Log");
+            egui::ScrollArea::vertical()
+                .id_salt("voxel_generator_log")
+                .max_height(400.0)
+                .stick_to_bottom(true)
+                .show(&mut columns[1], |ui| {
+                    if self.generator_log.is_empty() {
+                        ui.label("No generator output yet. Click Generate All Templates to start.");
+                    } else {
+                        for line in &self.generator_log {
+                            ui.small(line.as_str());
+                        }
+                    }
+                });
         });
     }
 
@@ -11412,4 +11654,117 @@ fn layer_tile_id_at(layer: &TileLayerDef, x: usize, y: usize) -> Option<String> 
         .iter()
         .find(|entry| entry.symbol.chars().next() == Some(symbol))
         .map(|entry| entry.tile_id.clone())
+}
+
+/// Draw a simple isometric voxel projection of a loaded .vox model onto an egui canvas rect.
+///
+/// The projection uses an orthographic isometric view (X right, Y into screen, Z up).
+/// Each voxel is drawn as a filled dot/square colored from the model palette.
+/// Voxels are sorted back-to-front so closer voxels overdraw farther ones.
+fn draw_vox_isometric_preview(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    model: &VoxModel,
+) {
+    if model.voxels.is_empty() || model.palette.is_empty() {
+        painter.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "No voxels",
+            egui::FontId::proportional(13.0),
+            egui::Color32::from_rgb(120, 130, 150),
+        );
+        return;
+    }
+
+    let w = model.width.max(1) as f32;
+    let h = model.height.max(1) as f32;
+    let d = model.depth.max(1) as f32;
+
+    // Isometric projection: X → right+down, Y → left+down, Z → up
+    // iso_x = (vx - vy) * cos30,  iso_y = (vx + vy) * sin30 - vz
+    let cos30 = 0.866_f32;
+    let sin30 = 0.5_f32;
+
+    let project = |vx: f32, vy: f32, vz: f32| -> egui::Pos2 {
+        let ix = (vx - vy) * cos30;
+        let iy = (vx + vy) * sin30 - vz;
+        egui::pos2(ix, iy)
+    };
+
+    // Compute bounding box of all corners to fit in rect
+    let corners = [
+        project(0.0, 0.0, 0.0),
+        project(w, 0.0, 0.0),
+        project(0.0, h, 0.0),
+        project(w, h, 0.0),
+        project(0.0, 0.0, d),
+        project(w, 0.0, d),
+        project(0.0, h, d),
+        project(w, h, d),
+    ];
+    let min_x = corners.iter().map(|p| p.x).fold(f32::INFINITY, f32::min);
+    let max_x = corners.iter().map(|p| p.x).fold(f32::NEG_INFINITY, f32::max);
+    let min_y = corners.iter().map(|p| p.y).fold(f32::INFINITY, f32::min);
+    let max_y = corners.iter().map(|p| p.y).fold(f32::NEG_INFINITY, f32::max);
+    let span_x = (max_x - min_x).max(1.0);
+    let span_y = (max_y - min_y).max(1.0);
+    let scale = (rect.width() / span_x).min(rect.height() / span_y) * 0.88;
+
+    let offset_x = rect.center().x - (min_x + span_x * 0.5) * scale;
+    let offset_y = rect.center().y - (min_y + span_y * 0.5) * scale;
+
+    let to_screen = |vx: f32, vy: f32, vz: f32| -> egui::Pos2 {
+        let iso = project(vx, vy, vz);
+        egui::pos2(iso.x * scale + offset_x, iso.y * scale + offset_y)
+    };
+
+    let dot_radius = (scale * 0.55).clamp(1.0, 6.0);
+
+    // Sort voxels back-to-front: larger x+y and smaller z draw first (painter's algorithm)
+    let mut sorted: Vec<&engine_assets::vox::VoxVoxel> = model.voxels.iter().collect();
+    sorted.sort_by(|a, b| {
+        let depth_a = (a.x as i32 + a.y as i32) * 1000 - a.z as i32;
+        let depth_b = (b.x as i32 + b.y as i32) * 1000 - b.z as i32;
+        depth_a.cmp(&depth_b)
+    });
+
+    for voxel in sorted {
+        let color_index = voxel.color_index as usize;
+        let color = model.palette.get(color_index).copied().unwrap_or(
+            engine_assets::vox::VoxColor { r: 180, g: 60, b: 200, a: 255 },
+        );
+        if color.a == 0 {
+            continue;
+        }
+        let center = to_screen(voxel.x as f32 + 0.5, voxel.y as f32 + 0.5, voxel.z as f32 + 0.5);
+        if !rect.expand(dot_radius).contains(center) {
+            continue;
+        }
+        let face_color = egui::Color32::from_rgb(color.r, color.g, color.b);
+        let shade = egui::Color32::from_rgb(
+            (color.r as f32 * 0.72) as u8,
+            (color.g as f32 * 0.72) as u8,
+            (color.b as f32 * 0.72) as u8,
+        );
+        painter.circle_filled(center, dot_radius, face_color);
+        painter.circle_stroke(center, dot_radius, egui::Stroke::new(0.5, shade));
+    }
+}
+
+/// Validate a generated .vox file against the expected dimensions from a profile.
+/// Returns `None` if the file looks correct, or a short diagnostic string.
+fn validate_vox_profile(path: &std::path::Path, expected: [u8; 3]) -> Option<String> {
+    let model = load_vox_file(path).ok()?;
+    let (ew, eh, ed) = (expected[0] as u32, expected[1] as u32, expected[2] as u32);
+    if model.width != ew || model.height != eh || model.depth != ed {
+        Some(format!(
+            "Dimensions {}×{}×{} do not match expected {}×{}×{}.",
+            model.width, model.height, model.depth, ew, eh, ed
+        ))
+    } else if model.voxels.is_empty() {
+        Some("Model has no voxels.".to_string())
+    } else {
+        None
+    }
 }
