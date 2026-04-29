@@ -1,0 +1,18 @@
+Phase 53j.1 — Non-Blocking Editor Reload Fix
+
+Changed:
+- crates/app/src/egui_editor.rs
+- docs/PHASE53J_1_NON_BLOCKING_RELOAD_FIX.md
+
+Purpose:
+- Prevent top Reload/F5/Hot Reload from hanging the whole egui editor.
+- Move heavy content reload work to a background worker.
+- Poll/apply reload results from the single root egui frame.
+- Disable reload buttons while a reload is already running.
+
+Validation:
+- cargo check --workspace
+- RUN_EDITOR_DEBUG.bat
+- click Reload F5 and verify UI remains responsive
+- press F5 repeatedly and verify only one reload job is active
+- verify no nested editor shell regression

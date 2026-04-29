@@ -1,0 +1,18 @@
+(
+    phase: "53k.1",
+    name: "Tile Map Option Reload Compile Fix",
+    summary: "Fixes the non-blocking reload payload type mismatch after tile preview render data became optional.",
+    gameplay_changes: false,
+    editor_changes: [
+        "ContentReloadPayload now stores Option<TileMapRenderData>.",
+        "Background reload apply path assigns optional tile preview data directly.",
+        "Reload fallback behavior remains non-blocking and editor-safe.",
+    ],
+    validation: [
+        "cargo check --workspace",
+        "Run editor debug",
+        "Press Reload/F5 and confirm no UI hang",
+        "Open Assets -> Voxel Panels -> 3D Preview",
+        "Confirm no nested editor shell regression",
+    ],
+)

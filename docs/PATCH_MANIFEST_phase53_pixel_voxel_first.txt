@@ -1,0 +1,28 @@
+Starlight_Ridge_phase53_pixel_voxel_first_character_tool_templates
+
+Added:
+- Pixel-voxel-first master docs.
+- High-detail character base template docs.
+- External tool plan for MagicaVoxel, Blockbench, and Blender.
+- Voxel scene format docs.
+- Voxel asset registry RON.
+- Voxel material registry RON.
+- Voxel import/validation rule RON.
+- Starter scene voxel placeholder files.
+- Two bald/clean-face high-detail character base `.vox` templates.
+- Five high-detail held tool `.vox` templates.
+- Copied uploaded character image references into assets/art_source/phase53_character_refs/.
+
+Generated voxel counts:
+- character_base_template_adult_a_bald_clean.vox: 7034
+- character_base_template_adult_b_bald_clean.vox: 5602
+- tool_hoe_high_detail_template.vox: 1498
+- tool_axe_high_detail_template.vox: 1453
+- tool_pickaxe_high_detail_template.vox: 876
+- tool_watering_can_high_detail_template.vox: 4831
+- tool_sword_high_detail_template.vox: 654
+
+Notes:
+- The `.vox` templates are generated foundation assets, not final art.
+- No Rust code was changed in this patch, so it should not introduce compile errors.
+- Future patch should wire the voxel registry/contracts into game_data and add egui child-panel tabs for 3D voxel preview without nested-editor regression.

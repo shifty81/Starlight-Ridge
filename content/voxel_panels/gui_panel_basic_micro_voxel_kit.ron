@@ -1,0 +1,57 @@
+(
+    id: "gui_panel_basic_micro_voxel_kit",
+    display_name: "Basic GUI Panel Micro-Voxel Kit",
+    category: "gui",
+    voxel_size_px: 1,
+    default_width: 16,
+    default_height: 9,
+    default_depth: 3,
+    palette: [
+        (id:"panel_shadow", display_name:"Panel Shadow", material_id:"ui_shadow", color_rgba:(22, 25, 32, 255)),
+        (id:"panel_body", display_name:"Panel Body", material_id:"ui_panel_body", color_rgba:(54, 68, 88, 255)),
+        (id:"panel_trim", display_name:"Panel Trim", material_id:"ui_panel_trim", color_rgba:(104, 142, 178, 255)),
+        (id:"panel_highlight", display_name:"Panel Highlight", material_id:"ui_panel_highlight", color_rgba:(178, 214, 232, 255)),
+    ],
+    pieces: [
+        (
+            id:"gui_panel_16x9_frame",
+            display_name:"16x9 GUI Frame",
+            category:"gui_panel",
+            width:16,
+            height:9,
+            depth:3,
+            anchor_x:0,
+            anchor_y:0,
+            anchor_z:0,
+            sockets:[
+                (id:"left_edge", side:"west", x:0, y:4, z:1, accepts:["gui_panel_edge","gui_panel_corner"]),
+                (id:"right_edge", side:"east", x:15, y:4, z:1, accepts:["gui_panel_edge","gui_panel_corner"]),
+                (id:"top_edge", side:"north", x:8, y:0, z:1, accepts:["gui_panel_edge","gui_panel_corner"]),
+                (id:"bottom_edge", side:"south", x:8, y:8, z:1, accepts:["gui_panel_edge","gui_panel_corner"]),
+            ],
+            voxels:[
+                (x:0,y:0,z:0,material_id:"panel_shadow"), (x:1,y:0,z:0,material_id:"panel_shadow"), (x:2,y:0,z:0,material_id:"panel_shadow"), (x:3,y:0,z:0,material_id:"panel_shadow"), (x:4,y:0,z:0,material_id:"panel_shadow"), (x:5,y:0,z:0,material_id:"panel_shadow"), (x:6,y:0,z:0,material_id:"panel_shadow"), (x:7,y:0,z:0,material_id:"panel_shadow"), (x:8,y:0,z:0,material_id:"panel_shadow"), (x:9,y:0,z:0,material_id:"panel_shadow"), (x:10,y:0,z:0,material_id:"panel_shadow"), (x:11,y:0,z:0,material_id:"panel_shadow"), (x:12,y:0,z:0,material_id:"panel_shadow"), (x:13,y:0,z:0,material_id:"panel_shadow"), (x:14,y:0,z:0,material_id:"panel_shadow"), (x:15,y:0,z:0,material_id:"panel_shadow"),
+                (x:0,y:8,z:0,material_id:"panel_shadow"), (x:1,y:8,z:0,material_id:"panel_shadow"), (x:2,y:8,z:0,material_id:"panel_shadow"), (x:3,y:8,z:0,material_id:"panel_shadow"), (x:4,y:8,z:0,material_id:"panel_shadow"), (x:5,y:8,z:0,material_id:"panel_shadow"), (x:6,y:8,z:0,material_id:"panel_shadow"), (x:7,y:8,z:0,material_id:"panel_shadow"), (x:8,y:8,z:0,material_id:"panel_shadow"), (x:9,y:8,z:0,material_id:"panel_shadow"), (x:10,y:8,z:0,material_id:"panel_shadow"), (x:11,y:8,z:0,material_id:"panel_shadow"), (x:12,y:8,z:0,material_id:"panel_shadow"), (x:13,y:8,z:0,material_id:"panel_shadow"), (x:14,y:8,z:0,material_id:"panel_shadow"), (x:15,y:8,z:0,material_id:"panel_shadow"),
+                (x:0,y:1,z:0,material_id:"panel_shadow"), (x:0,y:2,z:0,material_id:"panel_shadow"), (x:0,y:3,z:0,material_id:"panel_shadow"), (x:0,y:4,z:0,material_id:"panel_shadow"), (x:0,y:5,z:0,material_id:"panel_shadow"), (x:0,y:6,z:0,material_id:"panel_shadow"), (x:0,y:7,z:0,material_id:"panel_shadow"),
+                (x:15,y:1,z:0,material_id:"panel_shadow"), (x:15,y:2,z:0,material_id:"panel_shadow"), (x:15,y:3,z:0,material_id:"panel_shadow"), (x:15,y:4,z:0,material_id:"panel_shadow"), (x:15,y:5,z:0,material_id:"panel_shadow"), (x:15,y:6,z:0,material_id:"panel_shadow"), (x:15,y:7,z:0,material_id:"panel_shadow"),
+
+                (x:1,y:1,z:1,material_id:"panel_trim"), (x:2,y:1,z:1,material_id:"panel_trim"), (x:3,y:1,z:1,material_id:"panel_trim"), (x:4,y:1,z:1,material_id:"panel_trim"), (x:5,y:1,z:1,material_id:"panel_trim"), (x:6,y:1,z:1,material_id:"panel_trim"), (x:7,y:1,z:1,material_id:"panel_trim"), (x:8,y:1,z:1,material_id:"panel_trim"), (x:9,y:1,z:1,material_id:"panel_trim"), (x:10,y:1,z:1,material_id:"panel_trim"), (x:11,y:1,z:1,material_id:"panel_trim"), (x:12,y:1,z:1,material_id:"panel_trim"), (x:13,y:1,z:1,material_id:"panel_trim"), (x:14,y:1,z:1,material_id:"panel_trim"),
+                (x:1,y:7,z:1,material_id:"panel_trim"), (x:2,y:7,z:1,material_id:"panel_trim"), (x:3,y:7,z:1,material_id:"panel_trim"), (x:4,y:7,z:1,material_id:"panel_trim"), (x:5,y:7,z:1,material_id:"panel_trim"), (x:6,y:7,z:1,material_id:"panel_trim"), (x:7,y:7,z:1,material_id:"panel_trim"), (x:8,y:7,z:1,material_id:"panel_trim"), (x:9,y:7,z:1,material_id:"panel_trim"), (x:10,y:7,z:1,material_id:"panel_trim"), (x:11,y:7,z:1,material_id:"panel_trim"), (x:12,y:7,z:1,material_id:"panel_trim"), (x:13,y:7,z:1,material_id:"panel_trim"), (x:14,y:7,z:1,material_id:"panel_trim"),
+                (x:1,y:2,z:1,material_id:"panel_trim"), (x:1,y:3,z:1,material_id:"panel_trim"), (x:1,y:4,z:1,material_id:"panel_trim"), (x:1,y:5,z:1,material_id:"panel_trim"), (x:1,y:6,z:1,material_id:"panel_trim"),
+                (x:14,y:2,z:1,material_id:"panel_trim"), (x:14,y:3,z:1,material_id:"panel_trim"), (x:14,y:4,z:1,material_id:"panel_trim"), (x:14,y:5,z:1,material_id:"panel_trim"), (x:14,y:6,z:1,material_id:"panel_trim"),
+
+                (x:2,y:2,z:1,material_id:"panel_body"), (x:3,y:2,z:1,material_id:"panel_body"), (x:4,y:2,z:1,material_id:"panel_body"), (x:5,y:2,z:1,material_id:"panel_body"), (x:6,y:2,z:1,material_id:"panel_body"), (x:7,y:2,z:1,material_id:"panel_body"), (x:8,y:2,z:1,material_id:"panel_body"), (x:9,y:2,z:1,material_id:"panel_body"), (x:10,y:2,z:1,material_id:"panel_body"), (x:11,y:2,z:1,material_id:"panel_body"), (x:12,y:2,z:1,material_id:"panel_body"), (x:13,y:2,z:1,material_id:"panel_body"),
+                (x:2,y:3,z:1,material_id:"panel_body"), (x:3,y:3,z:1,material_id:"panel_body"), (x:4,y:3,z:1,material_id:"panel_body"), (x:5,y:3,z:1,material_id:"panel_body"), (x:6,y:3,z:1,material_id:"panel_body"), (x:7,y:3,z:1,material_id:"panel_body"), (x:8,y:3,z:1,material_id:"panel_body"), (x:9,y:3,z:1,material_id:"panel_body"), (x:10,y:3,z:1,material_id:"panel_body"), (x:11,y:3,z:1,material_id:"panel_body"), (x:12,y:3,z:1,material_id:"panel_body"), (x:13,y:3,z:1,material_id:"panel_body"),
+                (x:2,y:4,z:1,material_id:"panel_body"), (x:3,y:4,z:1,material_id:"panel_body"), (x:4,y:4,z:1,material_id:"panel_body"), (x:5,y:4,z:1,material_id:"panel_body"), (x:6,y:4,z:1,material_id:"panel_body"), (x:7,y:4,z:1,material_id:"panel_body"), (x:8,y:4,z:1,material_id:"panel_body"), (x:9,y:4,z:1,material_id:"panel_body"), (x:10,y:4,z:1,material_id:"panel_body"), (x:11,y:4,z:1,material_id:"panel_body"), (x:12,y:4,z:1,material_id:"panel_body"), (x:13,y:4,z:1,material_id:"panel_body"),
+                (x:2,y:5,z:1,material_id:"panel_body"), (x:3,y:5,z:1,material_id:"panel_body"), (x:4,y:5,z:1,material_id:"panel_body"), (x:5,y:5,z:1,material_id:"panel_body"), (x:6,y:5,z:1,material_id:"panel_body"), (x:7,y:5,z:1,material_id:"panel_body"), (x:8,y:5,z:1,material_id:"panel_body"), (x:9,y:5,z:1,material_id:"panel_body"), (x:10,y:5,z:1,material_id:"panel_body"), (x:11,y:5,z:1,material_id:"panel_body"), (x:12,y:5,z:1,material_id:"panel_body"), (x:13,y:5,z:1,material_id:"panel_body"),
+                (x:2,y:6,z:1,material_id:"panel_body"), (x:3,y:6,z:1,material_id:"panel_body"), (x:4,y:6,z:1,material_id:"panel_body"), (x:5,y:6,z:1,material_id:"panel_body"), (x:6,y:6,z:1,material_id:"panel_body"), (x:7,y:6,z:1,material_id:"panel_body"), (x:8,y:6,z:1,material_id:"panel_body"), (x:9,y:6,z:1,material_id:"panel_body"), (x:10,y:6,z:1,material_id:"panel_body"), (x:11,y:6,z:1,material_id:"panel_body"), (x:12,y:6,z:1,material_id:"panel_body"), (x:13,y:6,z:1,material_id:"panel_body"),
+
+                (x:2,y:2,z:2,material_id:"panel_highlight"), (x:3,y:2,z:2,material_id:"panel_highlight"), (x:4,y:2,z:2,material_id:"panel_highlight"), (x:5,y:2,z:2,material_id:"panel_highlight"),
+            ],
+            tags:["gui","frame","modular","voxel_pixel"],
+        ),
+    ],
+    bake_targets: [
+        (id:"gui_panel_sprite_16x9", display_name:"GUI Panel Sprite 16x9", output_kind:"sprite", output_path:"assets/textures/ui/generated/gui_panel_basic.png", tile_width:16, tile_height:9, include_depth_layers:true),
+    ],
+)

@@ -1,0 +1,116 @@
+(
+    id: "phase20_editor_export_validation_pipeline",
+    display_name: "Phase 20 Export, Validation, and Autotile Pipeline",
+    export_profiles: [
+        (
+            id: "clean_source_zip",
+            display_name: "Clean Source Zip",
+            target_root: "artifacts/source_rollups",
+            include_paths: ["Cargo.toml", "crates", "content", "assets", "docs", "tools"],
+            required_outputs: ["content", "crates/app", "crates/game_data"],
+            dry_run_default: true,
+            write_manifest: true,
+        ),
+    ],
+    validation_panels: [
+        (
+            id: "content_validation_panel",
+            display_name: "Content Validation",
+            issue_filters: [
+                (severity: "error", enabled: true),
+                (severity: "warning", enabled: true),
+                (severity: "info", enabled: false),
+            ],
+            jump_targets: [
+                (kind: "tile", can_open: true, description: "Open the referenced tile in the atlas inspector."),
+                (kind: "map_layer", can_open: true, description: "Open the referenced map layer in the world editor."),
+                (kind: "export_profile", can_open: true, description: "Open the relevant export profile."),
+            ],
+        ),
+    ],
+    autotile_rule_sets: [
+        (
+            id: "coastal_ground_autotile_preview",
+            display_name: "Coastal Ground Autotile Preview",
+            terrain_family: "ground",
+            mode: "cardinal_preview",
+            output_layer: 2,
+            rules: [
+                (
+                    id: "grass_to_sand_north_preview",
+                    from: "grass",
+                    to: "sand",
+                    priority: 10,
+                    neighbor_mask: 1,
+                    output_atlas_id: "terrain_atlas",
+                    output_tile_id: "grass_sand_n",
+                    tool_hint: "Preview a north-facing grass-to-sand transition.",
+                ),
+                (
+                    id: "sand_to_water_north_preview",
+                    from: "sand",
+                    to: "shallow_water",
+                    priority: 20,
+                    neighbor_mask: 1,
+                    output_atlas_id: "terrain_atlas",
+                    output_tile_id: "shore_n",
+                    tool_hint: "Preview a north-facing sand-to-shallow-water shoreline.",
+                ),
+            ],
+        ),
+    ],
+    transition_rule_editors: [
+        (
+            id: "coastal_transition_editor",
+            display_name: "Coastal Transition Editor",
+            rule_set_id: "coastal_ground_v1",
+            editable_fields: ["mode", "render_layer", "fallback_tile_id", "tiles"],
+            preview_pairs: [
+                (from: "grass", to: "sand"),
+                (from: "sand", to: "shallow_water"),
+                (from: "shallow_water", to: "deep_water"),
+            ],
+        ),
+    ],
+    collision_interaction_profiles: [
+        (
+            id: "grass_walkable_collision",
+            target_kind: "terrain",
+            target_id: "grass",
+            walkable: true,
+            blocks_movement: false,
+            water: false,
+            collision_bounds: (x: 0, y: 0, width: 32, height: 32),
+            interaction: None,
+        ),
+        (
+            id: "shallow_water_blocking_collision",
+            target_kind: "terrain",
+            target_id: "shallow_water",
+            walkable: false,
+            blocks_movement: true,
+            water: true,
+            collision_bounds: (x: 0, y: 0, width: 32, height: 32),
+            interaction: None,
+        ),
+    ],
+    atlas_cleanup_manifests: [
+        (
+            id: "terrain_atlas_self_cleanup",
+            display_name: "Terrain Atlas Self Cleanup",
+            source_atlas_id: "terrain_atlas",
+            source_role: "canonical_project_atlas",
+            target_atlas_id: "terrain_atlas",
+            target_role: "canonical_project_atlas",
+            actions: [
+                (
+                    id: "flag_duplicate_variants",
+                    action: "flag_for_review",
+                    source_category: "variant",
+                    target_category: "variant",
+                    reason: "Keep near-duplicate generated variants visible to the cleanup panel instead of silently deleting source art.",
+                ),
+            ],
+        ),
+    ],
+)

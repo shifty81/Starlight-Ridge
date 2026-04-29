@@ -1,0 +1,18 @@
+[
+    (
+        id: "base_male_underwear",
+        texture: "assets/textures/characters/base_male_underwear.png",
+        frame_width: 32,
+        frame_height: 48,
+        directions: ["front", "side", "back", "side"],
+        purpose: "non_destructive_character_mannequin_base",
+    ),
+    (
+        id: "base_female_underwear",
+        texture: "assets/textures/characters/base_female_underwear.png",
+        frame_width: 32,
+        frame_height: 48,
+        directions: ["front", "side", "back", "side"],
+        purpose: "non_destructive_character_mannequin_base",
+    ),
+]

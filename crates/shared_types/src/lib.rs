@@ -180,7 +180,10 @@ impl SceneNode {
         if self.width == 0 || self.height == 0 {
             issues.push(ValidationIssue::error(
                 format!("scene.{}", self.id),
-                format!("Scene dimensions are invalid: {}x{}.", self.width, self.height),
+                format!(
+                    "Scene dimensions are invalid: {}x{}.",
+                    self.width, self.height
+                ),
             ));
         }
         if self.tile_size == 0 {
@@ -324,7 +327,9 @@ impl LayerStack {
                     format!("Duplicate layer id '{}'.", layer.id),
                 ));
             }
-            if layer.kind == LayerKind::Collision && layer.generation_policy == LayerGenerationPolicy::Authored {
+            if layer.kind == LayerKind::Collision
+                && layer.generation_policy == LayerGenerationPolicy::Authored
+            {
                 issues.push(ValidationIssue::info(
                     format!("{}.layers.{}", owner_id, layer.id),
                     "Collision layer is authored; consider deriving it from terrain/objects after the gameplay rules settle.",

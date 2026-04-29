@@ -11,6 +11,7 @@ anyhow.workspace = true
 env_logger.workspace = true
 log.workspace = true
 ron.workspace = true
+serde.workspace = true
 image.workspace = true
 glam.workspace = true
 winit.workspace = true
@@ -24,9 +25,12 @@ engine_audio = { path = "../engine_audio" }
 engine_debug = { path = "../engine_debug" }
 game_core = { path = "../game_core" }
 game_world = { path = "../game_world" }
+game_worldgen = { path = "../game_worldgen" }
 game_data = { path = "../game_data" }
+shared_types = { path = "../shared_types" }
 game_ui = { path = "../game_ui" }
 editor_core = { path = "../editor_core" }
+editor_undo = { path = "../editor_undo" }
 
 # Phase 36: editor.exe UI is now built with egui/eframe instead of the custom GL overlay.
 eframe = "0.34.1"

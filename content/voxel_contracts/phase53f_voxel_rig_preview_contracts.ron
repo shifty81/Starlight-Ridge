@@ -1,0 +1,15 @@
+VoxelRigPreviewContracts(
+    version: 1,
+    notes: [
+        "Phase 53f is an editor workflow and metadata-preview phase.",
+        "Base templates are bald and clean-shaven; hair and facial hair are modular overlays.",
+        "Full 3D bone/attachment viewport rendering is deferred to the next viewport implementation pass.",
+    ],
+    required_contracts: [
+        "VoxelRigPreviewProfile",
+        "VoxelRigDef",
+        "VoxelSkeletonDef",
+        "VoxelAttachmentPointDef",
+        "ToolAttachmentPreview",
+    ],
+)

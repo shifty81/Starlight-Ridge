@@ -1,0 +1,52 @@
+Commands(
+    commands: [
+        CommandDef(
+            id: "voxel.generate.phase53c.selected_profile",
+            label: "Voxel / Generate Selected Profile",
+            shell: "python",
+            args: ["tools/scripts/voxel/phase53c_run_voxel_generator.py", "--profile", "{selected_profile_id}"],
+            working_dir: ".",
+            output_panel: "Pipeline",
+        ),
+        CommandDef(
+            id: "voxel.generate.phase53c.all_templates",
+            label: "Voxel / Generate All Phase 53b Templates",
+            shell: "python",
+            args: ["tools/scripts/voxel/phase53c_run_voxel_generator.py", "--all"],
+            working_dir: ".",
+            output_panel: "Pipeline",
+        ),
+        CommandDef(
+            id: "voxel.open.selected_magicavoxel",
+            label: "Voxel / Open Selected in MagicaVoxel",
+            shell: "external_tool",
+            args: ["magica_voxel", "{selected_voxel_path}"],
+            working_dir: ".",
+            output_panel: "Pipeline",
+        ),
+        CommandDef(
+            id: "voxel.open.selected_blockbench",
+            label: "Voxel / Open Selected in Blockbench",
+            shell: "external_tool",
+            args: ["blockbench", "{selected_voxel_path}"],
+            working_dir: ".",
+            output_panel: "Pipeline",
+        ),
+        CommandDef(
+            id: "voxel.open.selected_blender",
+            label: "Voxel / Open Selected in Blender",
+            shell: "external_tool",
+            args: ["blender", "{selected_voxel_path}"],
+            working_dir: ".",
+            output_panel: "Pipeline",
+        ),
+        CommandDef(
+            id: "voxel.validate.phase53c.generator_workflow",
+            label: "Voxel / Validate Generator Workflow",
+            shell: "python",
+            args: ["tools/scripts/voxel/phase53c_run_voxel_generator.py", "--validate-only"],
+            working_dir: ".",
+            output_panel: "Pipeline",
+        ),
+    ],
+)

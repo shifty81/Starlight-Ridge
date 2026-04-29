@@ -1,0 +1,44 @@
+DynamicVoxelizerValidationRules(
+    rules: [
+        ValidationRule(
+            id: "voxelizer.profile.max_voxels",
+            severity: Error,
+            message: "Voxelizer profile exceeds configured hard max voxel count.",
+        ),
+        ValidationRule(
+            id: "voxelizer.runtime.high_resolution",
+            severity: Error,
+            message: "Runtime VFX voxelizer profile uses an unsafe resolution for real-time use.",
+        ),
+        ValidationRule(
+            id: "voxelizer.output.path_missing",
+            severity: Warning,
+            message: "Voxelizer profile has no output path yet.",
+        ),
+        ValidationRule(
+            id: "rig.base_character.no_hair",
+            severity: Error,
+            message: "Base character templates must not include baked hair. Use modular hair overlays.",
+        ),
+        ValidationRule(
+            id: "rig.base_character.no_facial_hair",
+            severity: Error,
+            message: "Base character templates must not include baked facial hair. Use modular overlays.",
+        ),
+        ValidationRule(
+            id: "rig.attachment.required",
+            severity: Warning,
+            message: "Humanoid rigs should define right_hand_grip, left_hand_grip, head_hat_anchor, and hair_anchor attachment points.",
+        ),
+        ValidationRule(
+            id: "spring.chain.too_long_runtime",
+            severity: Warning,
+            message: "Spring bone chain may be too long for runtime use. Consider baking or lowering chain length.",
+        ),
+        ValidationRule(
+            id: "third_party.attribution.required",
+            severity: Error,
+            message: "Third-party reference assets must include attribution before use in editor/reference compare workflows.",
+        ),
+    ],
+)

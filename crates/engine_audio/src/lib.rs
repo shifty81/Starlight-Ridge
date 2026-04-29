@@ -6,7 +6,10 @@ pub struct AudioBootstrap {
 impl AudioBootstrap {
     pub fn new() -> Self {
         let bootstrap = Self { master_volume: 1.0 };
-        log::info!("audio bootstrap ready at volume {}", bootstrap.master_volume);
+        log::info!(
+            "audio bootstrap ready at volume {}",
+            bootstrap.master_volume
+        );
         bootstrap
     }
 }

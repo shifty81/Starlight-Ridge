@@ -20,5 +20,8 @@ fn preferred_start_map(registry: &ContentRegistry) -> String {
 
     let mut map_ids = registry.maps.keys().cloned().collect::<Vec<_>>();
     map_ids.sort();
-    map_ids.into_iter().next().unwrap_or_else(|| "starter_farm".to_string())
+    map_ids
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| "starter_farm".to_string())
 }

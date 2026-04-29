@@ -474,7 +474,8 @@ impl SemanticTerrainResolver {
                 let role = roles[idx];
                 let neighbors = NeighborMask {
                     north: y > 0 && role.same_transition_group(roles[(y - 1) * width_usize + x]),
-                    east: x + 1 < width_usize && role.same_transition_group(roles[y * width_usize + x + 1]),
+                    east: x + 1 < width_usize
+                        && role.same_transition_group(roles[y * width_usize + x + 1]),
                     south: y + 1 < height_usize
                         && role.same_transition_group(roles[(y + 1) * width_usize + x]),
                     west: x > 0 && role.same_transition_group(roles[y * width_usize + x - 1]),
@@ -484,7 +485,9 @@ impl SemanticTerrainResolver {
                     x: x as u32,
                     y: y as u32,
                     source_tile_id: source_ids[idx].clone(),
-                    resolved_tile_id: role.resolved_tile_id(neighbors, x as u32, y as u32).to_string(),
+                    resolved_tile_id: role
+                        .resolved_tile_id(neighbors, x as u32, y as u32)
+                        .to_string(),
                     role,
                     neighbors,
                 });
@@ -496,13 +499,14 @@ impl SemanticTerrainResolver {
 }
 
 fn terrain_hash(x: u32, y: u32) -> u32 {
-    let mut value = x.wrapping_mul(0x45d9f3b).wrapping_add(y.wrapping_mul(0x119de1f3));
+    let mut value = x
+        .wrapping_mul(0x45d9f3b)
+        .wrapping_add(y.wrapping_mul(0x119de1f3));
     value ^= value >> 16;
     value = value.wrapping_mul(0x45d9f3b);
     value ^= value >> 16;
     value
 }
-
 
 // -----------------------------------------------------------------------------
 // Phase 17 terrain contract support
@@ -625,9 +629,9 @@ impl SemanticTerrainGrid {
         y: u32,
         terrain_id: impl Into<String>,
     ) -> anyhow::Result<()> {
-        let index = self
-            .index(x, y)
-            .ok_or_else(|| anyhow::anyhow!("semantic terrain write out of bounds at {},{}", x, y))?;
+        let index = self.index(x, y).ok_or_else(|| {
+            anyhow::anyhow!("semantic terrain write out of bounds at {},{}", x, y)
+        })?;
         if let Some(cell) = self.cells.get_mut(index) {
             cell.terrain_id = terrain_id.into();
         }

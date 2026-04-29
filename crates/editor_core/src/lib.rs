@@ -1,14 +1,13 @@
-pub mod mode;
-pub mod selection;
+pub mod animation_pipeline;
 pub mod atlas_pipeline;
 pub mod export_pipeline;
-pub mod animation_pipeline;
+pub mod mode;
+pub mod selection;
 
 pub fn init() -> anyhow::Result<()> {
     log::info!("editor_core initialized");
     Ok(())
 }
-
 
 pub fn init_with_registry(registry: &game_data::registry::ContentRegistry) -> anyhow::Result<()> {
     init()?;

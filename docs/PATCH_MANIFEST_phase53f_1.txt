@@ -1,0 +1,15 @@
+Starlight Ridge — Phase 53f_1 eframe App UI Hotfix
+
+Changed:
+- crates/app/src/egui_editor.rs
+- docs/PHASE53F_1_EFRAME_APP_UI_HOTFIX.md
+- docs/PATCH_MANIFEST_phase53f_1.txt
+
+Build-log target:
+- Fixes Rust error E0046 caused by implementing update(...) when this eframe version requires ui(...).
+
+Preserved:
+- Voxel Pixel Panel Designer foundation.
+- Single-root editor shell guard.
+- No gameplay changes.
+- No 3D viewport work.

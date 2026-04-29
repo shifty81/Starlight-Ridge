@@ -1,0 +1,31 @@
+ExternalTools(
+    tools: [
+        ExternalToolDef(
+            id: "magica_voxel",
+            label: "MagicaVoxel",
+            executable_hint_windows: "MagicaVoxel.exe",
+            executable_hint_macos: "MagicaVoxel",
+            executable_hint_linux: "MagicaVoxel",
+            role: "Primary .vox refine/edit tool",
+            required: false,
+        ),
+        ExternalToolDef(
+            id: "blockbench",
+            label: "Blockbench",
+            executable_hint_windows: "Blockbench.exe",
+            executable_hint_macos: "Blockbench",
+            executable_hint_linux: "blockbench",
+            role: "Optional block model/pose/rig planning tool",
+            required: false,
+        ),
+        ExternalToolDef(
+            id: "blender",
+            label: "Blender",
+            executable_hint_windows: "blender.exe",
+            executable_hint_macos: "blender",
+            executable_hint_linux: "blender",
+            role: "Bake, render, turntable, and GLB reference inspection tool",
+            required: false,
+        ),
+    ],
+)

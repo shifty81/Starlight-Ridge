@@ -30,6 +30,7 @@ members = [
     "crates/editor_inspector",
     "crates/editor_undo",
     "crates/editor_data_bridge",
+    "crates/voxel_generator",
     "crates/web_editor_server",
     "crates/shared_types",
 ]

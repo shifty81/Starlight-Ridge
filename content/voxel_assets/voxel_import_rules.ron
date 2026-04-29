@@ -1,0 +1,8 @@
+VoxelImportRules(
+    phase: "phase53_pixel_voxel_first_master_spec",
+    rules: [
+        VoxelImportRule(source_glob: "content/voxels/characters/**/*.vox", default_category: Character, infer_category_from_folder: true, auto_register: false, default_density_profile: HeroDetail, default_voxels_per_tile: 64, default_collision: CapsuleApprox, default_render_mode: RuntimeVoxelOrBakedSprite),
+        VoxelImportRule(source_glob: "content/voxels/tools/**/*.vox", default_category: Tool, infer_category_from_folder: true, auto_register: false, default_density_profile: HeroDetail, default_voxels_per_tile: 64, default_collision: Bounds, default_render_mode: RuntimeVoxelOrBakedSprite),
+        VoxelImportRule(source_glob: "content/voxels/buildings/**/*.vox", default_category: Building, infer_category_from_folder: true, auto_register: false, default_density_profile: PixelVoxel64, default_voxels_per_tile: 64, default_collision: BoxApprox, default_render_mode: RuntimeVoxelOrBakedSprite),
+    ],
+)

@@ -26,10 +26,7 @@ fn is_tileset_sidecar_file(path: &Path) -> bool {
 
     matches!(
         file_name,
-        "base_tileset_roles.ron"
-            | "tile_roles.ron"
-            | "tileset_roles.ron"
-            | "atlas_roles.ron"
+        "base_tileset_roles.ron" | "tile_roles.ron" | "tileset_roles.ron" | "atlas_roles.ron"
     ) || file_name.ends_with("_roles.ron")
         || file_name.ends_with("_sidecar.ron")
         || file_name.contains("roles_")
@@ -125,7 +122,6 @@ pub fn load_registry(project_root: impl AsRef<Path>) -> anyhow::Result<ContentRe
         registry.editor_atlas_pipelines.insert(def.id.clone(), def);
     }
 
-
     for path in ron_files_in(&content_root.join("editor_export"))? {
         let def = load_editor_export_validation_pipeline(&path)?;
         registry.editor_export_pipelines.insert(def.id.clone(), def);
@@ -133,12 +129,9 @@ pub fn load_registry(project_root: impl AsRef<Path>) -> anyhow::Result<ContentRe
 
     for path in ron_files_in(&content_root.join("editor_animation"))? {
         let def = load_editor_animation_pipeline(&path)?;
-        registry.editor_animation_pipelines.insert(def.id.clone(), def);
-    }
-
-    for path in ron_files_in(&content_root.join("editor_hybrid_world"))? {
-        let def = load_hybrid_world_editor_pipeline(&path)?;
-        registry.hybrid_world_editor_pipelines.insert(def.id.clone(), def);
+        registry
+            .editor_animation_pipelines
+            .insert(def.id.clone(), def);
     }
 
     // Phase 51: load the canonical world/scene/layer architecture contracts.
@@ -153,7 +146,9 @@ pub fn load_registry(project_root: impl AsRef<Path>) -> anyhow::Result<ContentRe
     }
     for path in ron_files_in(&worldgen_root.join("protected_layer_policies"))? {
         let def = load_protected_layer_policy(&path)?;
-        registry.protected_layer_policies.insert(def.id.clone(), def);
+        registry
+            .protected_layer_policies
+            .insert(def.id.clone(), def);
     }
     for path in ron_files_in(&worldgen_root.join("generated_drafts"))? {
         let def = load_generated_scene_draft(&path)?;
@@ -169,7 +164,9 @@ pub fn load_registry(project_root: impl AsRef<Path>) -> anyhow::Result<ContentRe
         .join("worldgen_editor_workflow_phase51.ron");
     if editor_worldgen_workflow_path.exists() {
         let def = load_worldgen_editor_workflow(&editor_worldgen_workflow_path)?;
-        registry.worldgen_editor_workflows.insert(def.id.clone(), def);
+        registry
+            .worldgen_editor_workflows
+            .insert(def.id.clone(), def);
     }
 
     let maps_root = content_root.join("maps");
@@ -194,31 +191,7 @@ pub fn load_registry(project_root: impl AsRef<Path>) -> anyhow::Result<ContentRe
             let layers_path = path.join("layers.ron");
             if layers_path.exists() {
                 let layers = load_map_layers(&layers_path)?;
-                registry.map_layers.insert(map_id.clone(), layers);
-            }
-
-            let height_path = path.join("height.ron");
-            if height_path.exists() {
-                let height = load_height_map(&height_path)?;
-                registry.map_height_maps.insert(height.map_id.clone(), height);
-            }
-
-            let scene3d_path = path.join("scene3d.ron");
-            if scene3d_path.exists() {
-                let scene3d = load_scene3d(&scene3d_path)?;
-                registry.map_scene3d.insert(scene3d.map_id.clone(), scene3d);
-            }
-
-            let presentation_path = path.join("presentation.ron");
-            if presentation_path.exists() {
-                let presentation = load_presentation(&presentation_path)?;
-                registry.map_presentations.insert(presentation.map_id.clone(), presentation);
-            }
-
-            let lighting_path = path.join("lighting.ron");
-            if lighting_path.exists() {
-                let lighting = load_lighting_profile(&lighting_path)?;
-                registry.map_lighting_profiles.insert(lighting.map_id.clone(), lighting);
+                registry.map_layers.insert(map_id, layers);
             }
         }
     }

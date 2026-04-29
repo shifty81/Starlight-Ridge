@@ -1,0 +1,7 @@
+VoxelTerrainDef(
+    id: "starter_farm_voxel_terrain_phase53_placeholder",
+    scene_id: "starter_farm",
+    density_profile: PixelVoxel64,
+    voxels_per_tile: 64,
+    chunks: [],
+)

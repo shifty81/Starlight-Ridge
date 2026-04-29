@@ -1,0 +1,23 @@
+(
+    version: 1,
+    fields: [
+        (
+            field_id: "material.puddle_capacity",
+            display_name: "Puddle Capacity",
+            tooltip_short: "Maximum shallow water this material can hold before runoff.",
+            help_doc_id: "wiki.materials.materials",
+            validation_hint: "Set this above zero for materials that can visibly hold rainwater.",
+            examples: ["0.05 for stone", "0.20 for grass", "0.45 for mud"],
+            advanced: false,
+        ),
+        (
+            field_id: "vox.required_facings",
+            display_name: "Required Facings",
+            tooltip_short: "Directional sprites required by the orbit camera.",
+            help_doc_id: "wiki.vox.vox_pipeline",
+            validation_hint: "Four-way assets must bake north, east, south, and west sprites.",
+            examples: ["four_way", "eight_way"],
+            advanced: false,
+        ),
+    ],
+)

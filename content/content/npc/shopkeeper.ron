@@ -1,0 +1,8 @@
+(
+    id: "shopkeeper",
+    display_name: "Mira",
+    home_map: "town",
+    schedule_id: "shopkeeper_daily",
+    dialogue_id: "shopkeeper_default",
+    shop_id: Some("general_store"),
+)

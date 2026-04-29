@@ -4,6 +4,8 @@ This document is the single canonical roadmap for Starlight Ridge. It supersedes
 
 The guiding principle is **playable first**: get a real game loop running before adding worldgen, voxels, or simulation layers.
 
+For the detailed editor-only completion checklist, see [EDITOR_COMPLETION_ROADMAP.md](EDITOR_COMPLETION_ROADMAP.md).
+
 ---
 
 ## Current State (as of April 2026)

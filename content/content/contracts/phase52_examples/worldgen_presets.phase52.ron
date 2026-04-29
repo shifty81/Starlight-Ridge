@@ -1,0 +1,27 @@
+(
+    version: 1,
+    presets: [
+        (
+            id: "starter_coastal_peninsula",
+            display_name: "Starter Coastal Peninsula",
+            scene_template: "starter_farm_peninsula",
+            allowed_biomes: ["coastal_forest", "meadow_plains", "cultivated_farmland", "marsh"],
+            biome_weights: (
+                coastal_forest: 0.45,
+                meadow_plains: 0.25,
+                cultivated_farmland: 0.20,
+                marsh: 0.10,
+            ),
+            noise_profiles: (
+                elevation: "coastal_lowland_elevation",
+                moisture: "temperate_moisture",
+                temperature: "temperate_temperature",
+            ),
+            hydrology_profile: "coastal_peninsula_drainage",
+            feature_profiles: ["coastal_trees", "beach_debris", "starter_farm_clearings"],
+            authored_overlays: ["starter_farm_core", "north_town_road", "plot_boundaries"],
+            validation_profile: "starter_scene_required_routes",
+            help_doc_id: "wiki.worldgen.overview",
+        ),
+    ],
+)

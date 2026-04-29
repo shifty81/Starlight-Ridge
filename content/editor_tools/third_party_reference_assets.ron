@@ -1,0 +1,23 @@
+ThirdPartyReferenceAssetRegistry(
+    assets: [
+        ThirdPartyReferenceAssetDef(
+            id: "ref_staxel_voxel_female_andruha1801",
+            title: "Staxel Voxel Female",
+            author: "andruha1801",
+            source: "Sketchfab",
+            source_url: "https://skfb.ly/PBsF",
+            license: "CC BY 4.0",
+            license_url: "http://creativecommons.org/licenses/by/4.0/",
+            local_glb: Some("content/third_party/sketchfab/staxel_voxel_female/staxel_voxel_female.glb"),
+            local_archive: Some("content/third_party/sketchfab/staxel_voxel_female/staxel-voxel-female.zip"),
+            attribution_file: "content/third_party/sketchfab/staxel_voxel_female/ATTRIBUTION.md",
+            reference_use: "Reference-only for pixel-voxel character proportions, import testing, and external tool round-trip validation.",
+            production_use_allowed: false,
+            notes: [
+                "Do not directly ship or derive final Starlight Ridge base templates from this without carrying attribution into shipped credits.",
+                "Use as visual/proportion reference and generator QA target only.",
+                "Final Starlight Ridge character templates should be generated/refined as original project assets.",
+            ],
+        ),
+    ],
+)

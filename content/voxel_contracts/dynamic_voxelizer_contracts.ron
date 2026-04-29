@@ -1,0 +1,15 @@
+DynamicVoxelizerContracts(
+    version: 1,
+    notes: [
+        "Authoring/offline voxelizer and runtime VFX voxelizer are separate systems.",
+        "Runtime VFX voxelizer output is temporary unless explicitly saved by an editor bake action.",
+        "Pixel-voxel art is source-of-truth; runtime can use optimized render forms.",
+    ],
+    required_contracts: [
+        "DynamicVoxelizerProfile",
+        "VoxelizerGridDef",
+        "VoxelSamplingDef",
+        "VoxelPaletteQuantizationDef",
+        "VoxelizerPerformanceBudget",
+    ],
+)

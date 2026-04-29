@@ -1,0 +1,11 @@
+(
+    id: "phase52_season_catalog",
+    display_name: "Phase 52 Season Catalog",
+    default_days_per_season: 45,
+    seasons: [
+        (id:"spring", display_name:"Spring", average_temperature_c:12.0, daylight_start_hour:6.0, daylight_end_hour:19.5, material_variant_suffix:"spring", supports_snow_baseline:false, notes:"Wet growth season with rain and thaw behavior."),
+        (id:"summer", display_name:"Summer", average_temperature_c:24.0, daylight_start_hour:5.5, daylight_end_hour:21.0, material_variant_suffix:"summer", supports_snow_baseline:false, notes:"Warm dry/wet variant season."),
+        (id:"fall", display_name:"Fall", average_temperature_c:10.0, daylight_start_hour:6.5, daylight_end_hour:18.0, material_variant_suffix:"fall", supports_snow_baseline:false, notes:"Leaves, cooler rain, early frost possible."),
+        (id:"winter", display_name:"Winter", average_temperature_c:-4.0, daylight_start_hour:7.5, daylight_end_hour:17.0, material_variant_suffix:"winter", supports_snow_baseline:true, notes:"Snow accumulation, freeze/thaw, ice overlays."),
+    ],
+)

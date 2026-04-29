@@ -1,0 +1,24 @@
+(
+    id: "character_studio_workflow_phase46",
+    display_name: "Character Studio Warning Cleanup and Validation Prep",
+    workspace: "Character",
+    subtabs: [
+        "Mannequin",
+        "Paperdoll Layers",
+        "Equipment / Overlays",
+        "Animation Preview",
+        "Scale Validator",
+        "Export / Metadata",
+    ],
+    ui_fixes: [
+        "Animation Preview clip selectable labels now consume click responses instead of dropping the return value.",
+        "Selected preview clip updates editor status text for now; later phase should bind this to real clip state.",
+    ],
+    next_live_validation_tasks: [
+        "load Phase 45 asset contract into editor state",
+        "verify PNG dimensions against declared frame sizes",
+        "verify overlay/base frame parity",
+        "edit and save paperdoll offsets",
+        "surface missing anchors and sockets in Scale Validator",
+    ],
+)

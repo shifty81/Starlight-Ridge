@@ -1,0 +1,2 @@
+@echo off
+python tools\scripts\voxel\dynamic_voxelizer_offline_placeholder.py --profile offline_character_reference_high_density

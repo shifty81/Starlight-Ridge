@@ -1,0 +1,12 @@
+VoxelSceneDef(
+    scene_id: "starter_farm",
+    terrain_ref: None,
+    object_set_ref: Some("starter_farm_voxel_objects"),
+    default_palette: "starlight_pixel_voxel_default",
+    units_per_voxel: 0.03125,
+    grid: VoxelSceneGridDef(
+        tile_size_voxels: [64, 64, 16],
+        chunk_size_tiles: [16, 16],
+        world_up_axis: "Z",
+    ),
+)

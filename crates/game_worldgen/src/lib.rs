@@ -148,7 +148,8 @@ impl GeneratedScene {
     }
 
     pub fn terrain_at(&self, x: u32, y: u32) -> Option<SemanticTerrainId> {
-        self.index(x, y).and_then(|idx| self.semantic_tiles.get(idx).copied())
+        self.index(x, y)
+            .and_then(|idx| self.semantic_tiles.get(idx).copied())
     }
 
     pub fn set_terrain(&mut self, x: u32, y: u32, terrain: SemanticTerrainId) {
@@ -164,7 +165,9 @@ impl GeneratedScene {
         if self.semantic_tiles.len() != (self.width * self.height) as usize {
             warnings.push(format!(
                 "semantic tile count {} does not match scene dimensions {}x{}",
-                self.semantic_tiles.len(), self.width, self.height
+                self.semantic_tiles.len(),
+                self.width,
+                self.height
             ));
         }
 
@@ -286,7 +289,10 @@ pub fn generate_scene(request: &SceneGenRequest) -> anyhow::Result<GeneratedScen
     }
 }
 
-pub fn save_generated_scene_ron(scene: &GeneratedScene, path: impl AsRef<Path>) -> anyhow::Result<()> {
+pub fn save_generated_scene_ron(
+    scene: &GeneratedScene,
+    path: impl AsRef<Path>,
+) -> anyhow::Result<()> {
     let ron = ron::ser::to_string_pretty(scene, ron::ser::PrettyConfig::default())?;
     std::fs::write(path, ron)?;
     Ok(())
@@ -388,8 +394,14 @@ fn blank_scene(request: &SceneGenRequest, fill: SemanticTerrainId) -> GeneratedS
 }
 
 fn ensure_valid_request(request: &SceneGenRequest) -> anyhow::Result<()> {
-    anyhow::ensure!(request.width > 8, "scene width must be greater than 8 tiles");
-    anyhow::ensure!(request.height > 8, "scene height must be greater than 8 tiles");
+    anyhow::ensure!(
+        request.width > 8,
+        "scene width must be greater than 8 tiles"
+    );
+    anyhow::ensure!(
+        request.height > 8,
+        "scene height must be greater than 8 tiles"
+    );
     anyhow::ensure!(request.tile_size > 0, "scene tile size must be non-zero");
     Ok(())
 }
@@ -441,9 +453,13 @@ fn place_natural_objects(scene: &mut GeneratedScene, seed: u64) {
 
     for y in 2..height.saturating_sub(2) {
         for x in 2..width.saturating_sub(2) {
-            let Some(terrain) = scene.terrain_at(x, y) else { continue };
-            if matches!(terrain, SemanticTerrainId::PathDirt | SemanticTerrainId::FarmableSoil)
-                || terrain.is_water()
+            let Some(terrain) = scene.terrain_at(x, y) else {
+                continue;
+            };
+            if matches!(
+                terrain,
+                SemanticTerrainId::PathDirt | SemanticTerrainId::FarmableSoil
+            ) || terrain.is_water()
             {
                 continue;
             }

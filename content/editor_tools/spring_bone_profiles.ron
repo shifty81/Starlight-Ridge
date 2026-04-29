@@ -1,0 +1,59 @@
+SpringBoneProfileRegistry(
+    profiles: [
+        SpringBoneProfileDef(
+            id: "hair_overlay_short_soft",
+            display_name: "Hair Overlay — Short Soft",
+            chains: [
+                SpringBoneChainDef(
+                    id: "hair_back_chain",
+                    root_bone: "hair_anchor",
+                    bones: ["hair_back_01", "hair_back_02", "hair_back_03"],
+                    stiffness: 0.65,
+                    damping: 0.35,
+                    gravity: [0.0, 0.0, -0.15],
+                    drag: 0.2,
+                    max_angle_degrees: 18.0,
+                ),
+            ],
+            collision: SpringBoneCollisionDef(
+                enabled: true,
+                radius: 1.0,
+                capsule_colliders: ["head_collision", "neck_collision"],
+            ),
+            simulation: SpringBoneSimulationDef(
+                fixed_timestep: 0.0166667,
+                solver_iterations: 2,
+                reset_on_teleport: true,
+                pause_when_offscreen: true,
+            ),
+        ),
+
+        SpringBoneProfileDef(
+            id: "strap_or_scarf_medium",
+            display_name: "Strap / Scarf — Medium",
+            chains: [
+                SpringBoneChainDef(
+                    id: "scarf_chain",
+                    root_bone: "neck",
+                    bones: ["scarf_01", "scarf_02", "scarf_03", "scarf_04", "scarf_05"],
+                    stiffness: 0.45,
+                    damping: 0.4,
+                    gravity: [0.0, 0.0, -0.25],
+                    drag: 0.35,
+                    max_angle_degrees: 35.0,
+                ),
+            ],
+            collision: SpringBoneCollisionDef(
+                enabled: true,
+                radius: 1.0,
+                capsule_colliders: ["chest_collision"],
+            ),
+            simulation: SpringBoneSimulationDef(
+                fixed_timestep: 0.0166667,
+                solver_iterations: 2,
+                reset_on_teleport: true,
+                pause_when_offscreen: true,
+            ),
+        ),
+    ],
+)

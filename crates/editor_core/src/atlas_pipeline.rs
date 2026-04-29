@@ -21,7 +21,11 @@ impl EditorAtlasPipelineReport {
 
         for catalog in registry.editor_atlas_pipelines.values() {
             report.atlases += catalog.atlases.len();
-            report.editable_atlases += catalog.atlases.iter().filter(|atlas| atlas.editable).count();
+            report.editable_atlases += catalog
+                .atlases
+                .iter()
+                .filter(|atlas| atlas.editable)
+                .count();
             report.season_sets += catalog.season_sets.len();
             report.water_animations += catalog.water_animations.len();
             report.clipboard_tools += catalog.clipboard_tools.len();
@@ -50,7 +54,9 @@ impl EditorAtlasPipelineReport {
 pub fn log_editor_pipeline_report(registry: &ContentRegistry) {
     let report = EditorAtlasPipelineReport::from_registry(registry);
     if report.catalogs == 0 {
-        log::warn!("phase19 editor atlas pipeline is not loaded; atlas compare/import stays scaffold-only");
+        log::warn!(
+            "phase19 editor atlas pipeline is not loaded; atlas compare/import stays scaffold-only"
+        );
         return;
     }
 

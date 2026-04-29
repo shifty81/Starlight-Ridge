@@ -1,0 +1,33 @@
+(
+    phase: "53i",
+    title: "Voxel Composition 3D Preview Prep / Mesh Contract",
+    editor_path: "Assets -> Voxel Panels",
+    source_scope: "egui editor and RON data contracts only",
+    adds: [
+        "composition-to-preview mesh export contracts",
+        "baked panel instance transform records",
+        "baked voxel records with material colors and render hints",
+        "inclusive composition bounds metadata",
+        "socket gizmo export records",
+        "connection gizmo export records",
+        "per-composition mesh export folder metadata",
+        "Export 3D preview RON action",
+        "validation for export path and bake anchor metadata",
+        "starter kit metadata updated for Phase 53i",
+    ],
+    explicitly_not_added: [
+        "full 3D voxel viewport",
+        "GPU mesh rendering",
+        "runtime gameplay spawning",
+        "external tool export bridge",
+        "nested editor shell rendering",
+    ],
+    local_tests: [
+        "cargo check",
+        "RUN_EDITOR_DEBUG.bat",
+        "Assets -> Voxel Panels smoke test",
+        "composition export test",
+        "preview RON file existence test",
+        "single-root editor shell regression check",
+    ],
+)

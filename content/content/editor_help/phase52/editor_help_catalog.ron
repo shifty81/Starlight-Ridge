@@ -1,0 +1,16 @@
+(
+    id: "phase52_editor_help_catalog",
+    display_name: "Phase 52 Editor Help and Tooltip Catalog",
+    entries: [
+        (id:"field.biome.temperature_band", surface:"Biome Inspector", field:"temperature_band", tooltip_short:"Controls where this biome can appear by climate temperature.", wiki_path:"docs/wiki/worldgen/biomes.md", validation_hint:"Use a supported temperature band such as temperate, cold, hot, or extreme_hot."),
+        (id:"field.biome.moisture_band", surface:"Biome Inspector", field:"moisture_band", tooltip_short:"Controls rain, hydrology, and wetland probability.", wiki_path:"docs/wiki/worldgen/biomes.md", validation_hint:"Avoid dry moisture bands for wetland-only materials unless explicitly intended."),
+        (id:"field.material.family", surface:"Material Inspector", field:"family", tooltip_short:"Groups materials for transitions and editor palettes.", wiki_path:"docs/wiki/materials/materials.md", validation_hint:"Family should match transition rules: grass, sand, soil, mud, stone, snow, lava, water."),
+        (id:"field.liquid.flow_rate", surface:"Liquid Inspector", field:"flow_rate", tooltip_short:"How quickly the liquid moves between cells.", wiki_path:"docs/wiki/simulation/liquids_weather_snow.md", validation_hint:"Lava and oil should have lower flow rates than water."),
+        (id:"field.liquid.viscosity", surface:"Liquid Inspector", field:"viscosity", tooltip_short:"Higher viscosity means thicker, slower liquid behavior.", wiki_path:"docs/wiki/simulation/liquids_weather_snow.md", validation_hint:"Use >1 for swamp water, oil, and lava."),
+        (id:"field.weather.snow_depth_per_hour", surface:"Weather Inspector", field:"snow_depth_per_hour", tooltip_short:"Adds snow depth to the derived snow layer while the event runs.", wiki_path:"docs/wiki/simulation/liquids_weather_snow.md", validation_hint:"Only snow events should use a value above zero."),
+        (id:"field.layer.editable", surface:"Layer Manager", field:"editable", tooltip_short:"Whether artists can directly paint this layer.", wiki_path:"docs/wiki/editor/layers.md", validation_hint:"Derived simulation layers should not be editable."),
+        (id:"field.vox.bake_profile", surface:"VOX Asset Inspector", field:"bake_profile", tooltip_short:"Controls output size, camera angles, and generated masks for a .vox asset.", wiki_path:"docs/wiki/vox/vox_pipeline.md", validation_hint:"Every VOX asset must reference an existing bake profile."),
+        (id:"field.worldgen.pass_kind", surface:"WorldGen Pass Inspector", field:"pass_kind", tooltip_short:"Identifies the generator operation used by this pass.", wiki_path:"docs/wiki/worldgen/overview.md", validation_hint:"Pass kinds should be handled by the future worldgen executor before enabling runtime use."),
+        (id:"field.camera.rotation_mode", surface:"Camera Settings", field:"rotation_mode", tooltip_short:"Phase 52 starts with 90-degree orthographic orbit steps.", wiki_path:"docs/wiki/camera/orthographic_orbit_camera.md", validation_hint:"Free analog rotation is deferred until 4-direction bakes are stable."),
+    ],
+)

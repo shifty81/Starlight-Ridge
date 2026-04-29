@@ -1,0 +1,4 @@
+[
+    (id: "player_start", kind: "player", ref_id: None, x: 8, y: 10),
+    (id: "shopkeeper_spawn", kind: "npc", ref_id: Some("shopkeeper"), x: 12, y: 10),
+]

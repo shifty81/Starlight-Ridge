@@ -1,0 +1,14 @@
+SpringBoneContracts(
+    version: 1,
+    notes: [
+        "Spring bones are for modular overlays and props.",
+        "Do not bake spring-bone hair/facial hair into base character templates.",
+        "Runtime simulation must be budgeted and disable/pause when offscreen.",
+    ],
+    required_contracts: [
+        "SpringBoneProfileDef",
+        "SpringBoneChainDef",
+        "SpringBoneCollisionDef",
+        "SpringBoneSimulationDef",
+    ],
+)

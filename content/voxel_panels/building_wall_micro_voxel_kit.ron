@@ -1,0 +1,42 @@
+(
+    id: "building_wall_micro_voxel_kit",
+    display_name: "Building Wall Micro-Voxel Kit",
+    category: "building",
+    voxel_size_px: 1,
+    default_width: 12,
+    default_height: 10,
+    default_depth: 4,
+    palette: [
+        (id:"wall_plaster", display_name:"Warm Wall Plaster", material_id:"building_wall_plaster", color_rgba:(164, 139, 103, 255)),
+        (id:"wall_post_dark", display_name:"Dark Timber Post", material_id:"building_timber_dark", color_rgba:(76, 54, 38, 255)),
+        (id:"wall_roof_trim", display_name:"Roof/Top Trim", material_id:"building_roof_trim", color_rgba:(116, 62, 48, 255)),
+        (id:"wall_stone", display_name:"Embedded Stone", material_id:"building_stone_detail", color_rgba:(118, 120, 118, 255)),
+    ],
+    pieces: [
+        (
+            id:"cottage_wall_12x10_panel",
+            display_name:"Cottage Wall 12x10 Panel",
+            category:"building_wall",
+            width:12,
+            height:10,
+            depth:4,
+            anchor_x:0,
+            anchor_y:9,
+            anchor_z:0,
+            sockets:[
+                (id:"west_wall_socket", side:"west", x:0, y:5, z:1, accepts:["building_wall","building_corner"]),
+                (id:"east_wall_socket", side:"east", x:11, y:5, z:1, accepts:["building_wall","building_corner"]),
+                (id:"top_trim_socket", side:"north", x:6, y:0, z:2, accepts:["roof_trim","awning"]),
+                (id:"door_socket", side:"front", x:5, y:8, z:1, accepts:["door","porch"]),
+            ],
+            voxels:[
+                (x:0,y:0,z:2,material_id:"wall_roof_trim"), (x:1,y:0,z:2,material_id:"wall_roof_trim"), (x:2,y:0,z:2,material_id:"wall_roof_trim"), (x:3,y:0,z:2,material_id:"wall_roof_trim"), (x:4,y:0,z:2,material_id:"wall_roof_trim"), (x:5,y:0,z:2,material_id:"wall_roof_trim"), (x:6,y:0,z:2,material_id:"wall_roof_trim"), (x:7,y:0,z:2,material_id:"wall_roof_trim"), (x:8,y:0,z:2,material_id:"wall_roof_trim"), (x:9,y:0,z:2,material_id:"wall_roof_trim"), (x:10,y:0,z:2,material_id:"wall_roof_trim"), (x:11,y:0,z:2,material_id:"wall_roof_trim"), (x:0,y:1,z:2,material_id:"wall_roof_trim"), (x:1,y:1,z:2,material_id:"wall_roof_trim"), (x:2,y:1,z:2,material_id:"wall_roof_trim"), (x:3,y:1,z:2,material_id:"wall_roof_trim"), (x:4,y:1,z:2,material_id:"wall_roof_trim"), (x:5,y:1,z:2,material_id:"wall_roof_trim"), (x:6,y:1,z:2,material_id:"wall_roof_trim"), (x:7,y:1,z:2,material_id:"wall_roof_trim"), (x:8,y:1,z:2,material_id:"wall_roof_trim"), (x:9,y:1,z:2,material_id:"wall_roof_trim"), (x:10,y:1,z:2,material_id:"wall_roof_trim"), (x:11,y:1,z:2,material_id:"wall_roof_trim"), (x:0,y:2,z:2,material_id:"wall_post_dark"), (x:1,y:2,z:1,material_id:"wall_plaster"), (x:2,y:2,z:1,material_id:"wall_plaster"), (x:3,y:2,z:1,material_id:"wall_stone"), (x:4,y:2,z:1,material_id:"wall_plaster"), (x:5,y:2,z:1,material_id:"wall_plaster"), (x:6,y:2,z:1,material_id:"wall_plaster"), (x:7,y:2,z:1,material_id:"wall_plaster"), (x:8,y:2,z:1,material_id:"wall_stone"), (x:9,y:2,z:1,material_id:"wall_plaster"), (x:10,y:2,z:1,material_id:"wall_plaster"), (x:11,y:2,z:2,material_id:"wall_post_dark"), (x:0,y:3,z:2,material_id:"wall_post_dark"), (x:1,y:3,z:1,material_id:"wall_plaster"), (x:2,y:3,z:1,material_id:"wall_stone"), (x:3,y:3,z:1,material_id:"wall_plaster"), (x:4,y:3,z:1,material_id:"wall_plaster"), (x:5,y:3,z:1,material_id:"wall_plaster"), (x:6,y:3,z:1,material_id:"wall_plaster"), (x:7,y:3,z:1,material_id:"wall_stone"), (x:8,y:3,z:1,material_id:"wall_plaster"), (x:9,y:3,z:1,material_id:"wall_plaster"), (x:10,y:3,z:1,material_id:"wall_plaster"), (x:11,y:3,z:2,material_id:"wall_post_dark"), (x:0,y:4,z:2,material_id:"wall_post_dark"), (x:1,y:4,z:1,material_id:"wall_stone"), (x:2,y:4,z:1,material_id:"wall_plaster"), (x:3,y:4,z:1,material_id:"wall_plaster"), (x:4,y:4,z:1,material_id:"wall_plaster"), (x:5,y:4,z:1,material_id:"wall_plaster"), (x:6,y:4,z:1,material_id:"wall_stone"), (x:7,y:4,z:1,material_id:"wall_plaster"), (x:8,y:4,z:1,material_id:"wall_plaster"), (x:9,y:4,z:1,material_id:"wall_plaster"), (x:10,y:4,z:1,material_id:"wall_plaster"), (x:11,y:4,z:2,material_id:"wall_post_dark"), (x:0,y:5,z:2,material_id:"wall_post_dark"), (x:1,y:5,z:1,material_id:"wall_plaster"), (x:2,y:5,z:1,material_id:"wall_plaster"), (x:3,y:5,z:1,material_id:"wall_plaster"), (x:4,y:5,z:1,material_id:"wall_plaster"), (x:5,y:5,z:1,material_id:"wall_stone"), (x:6,y:5,z:1,material_id:"wall_plaster"), (x:7,y:5,z:1,material_id:"wall_plaster"), (x:8,y:5,z:1,material_id:"wall_plaster"), (x:9,y:5,z:1,material_id:"wall_plaster"), (x:10,y:5,z:1,material_id:"wall_stone"), (x:11,y:5,z:2,material_id:"wall_post_dark"), (x:0,y:6,z:2,material_id:"wall_post_dark"), (x:1,y:6,z:1,material_id:"wall_plaster"), (x:2,y:6,z:1,material_id:"wall_plaster"), (x:3,y:6,z:1,material_id:"wall_plaster"), (x:4,y:6,z:1,material_id:"wall_stone"), (x:5,y:6,z:1,material_id:"wall_plaster"), (x:6,y:6,z:1,material_id:"wall_plaster"), (x:7,y:6,z:1,material_id:"wall_plaster"), (x:8,y:6,z:1,material_id:"wall_plaster"), (x:9,y:6,z:1,material_id:"wall_stone"), (x:10,y:6,z:1,material_id:"wall_plaster"), (x:11,y:6,z:2,material_id:"wall_post_dark"), (x:0,y:7,z:2,material_id:"wall_post_dark"), (x:1,y:7,z:1,material_id:"wall_plaster"), (x:2,y:7,z:1,material_id:"wall_plaster"), (x:3,y:7,z:1,material_id:"wall_stone"), (x:4,y:7,z:1,material_id:"wall_plaster"), (x:5,y:7,z:1,material_id:"wall_plaster"), (x:6,y:7,z:1,material_id:"wall_plaster"), (x:7,y:7,z:1,material_id:"wall_plaster"), (x:8,y:7,z:1,material_id:"wall_stone"), (x:9,y:7,z:1,material_id:"wall_plaster"), (x:10,y:7,z:1,material_id:"wall_plaster"), (x:11,y:7,z:2,material_id:"wall_post_dark"), (x:0,y:8,z:2,material_id:"wall_post_dark"), (x:1,y:8,z:1,material_id:"wall_plaster"), (x:2,y:8,z:1,material_id:"wall_stone"), (x:3,y:8,z:1,material_id:"wall_plaster"), (x:4,y:8,z:1,material_id:"wall_plaster"), (x:5,y:8,z:1,material_id:"wall_plaster"), (x:6,y:8,z:1,material_id:"wall_plaster"), (x:7,y:8,z:1,material_id:"wall_stone"), (x:8,y:8,z:1,material_id:"wall_plaster"), (x:9,y:8,z:1,material_id:"wall_plaster"), (x:10,y:8,z:1,material_id:"wall_plaster"), (x:11,y:8,z:2,material_id:"wall_post_dark"), (x:0,y:9,z:2,material_id:"wall_post_dark"), (x:1,y:9,z:2,material_id:"wall_post_dark"), (x:2,y:9,z:2,material_id:"wall_post_dark"), (x:3,y:9,z:2,material_id:"wall_post_dark"), (x:4,y:9,z:2,material_id:"wall_post_dark"), (x:5,y:9,z:2,material_id:"wall_post_dark"), (x:6,y:9,z:2,material_id:"wall_post_dark"), (x:7,y:9,z:2,material_id:"wall_post_dark"), (x:8,y:9,z:2,material_id:"wall_post_dark"), (x:9,y:9,z:2,material_id:"wall_post_dark"), (x:10,y:9,z:2,material_id:"wall_post_dark"), (x:11,y:9,z:2,material_id:"wall_post_dark")
+            ],
+            tags:["building","wall","modular","voxel_pixel"],
+        ),
+    ],
+    bake_targets: [
+        (id:"building_wall_sprite", display_name:"Building Wall Sprite", output_kind:"sprite", output_path:"assets/textures/buildings/generated/cottage_wall_12x10.png", tile_width:32, tile_height:32, include_depth_layers:true),
+        (id:"building_wall_collision", display_name:"Building Wall Collision", output_kind:"collision_mask", output_path:"content/collision/generated/cottage_wall_12x10.ron", tile_width:12, tile_height:10, include_depth_layers:false),
+    ],
+)

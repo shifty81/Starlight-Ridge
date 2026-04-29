@@ -1,0 +1,29 @@
+(
+    version: 1,
+    assets: [
+        (
+            id: "weak_tree_oak_small",
+            source_vox: "assets/voxels/source/trees/weak_tree_oak_small.vox",
+            display_name: "Small Oak Tree",
+            category: "tree",
+            bake_profile: "default_four_way_pixel_vox",
+            required_facings: "four_way",
+            origin: (x: 16, y: 28),
+            footprint: (width_cells: 1, height_cells: 1, anchor_cell_x: 0, anchor_cell_y: 0),
+            collision_mask: Some("content/generated/vox_bakes/weak_tree_oak_small/collision.mask.ron"),
+            interaction_points: [
+                (id: "chop", local_x: 0, local_y: 1, action: "chop_tree"),
+            ],
+            seasonal_overrides: (),
+            damage_variants: [],
+            baked_outputs: (
+                north: "assets/generated/vox_bakes/weak_tree_oak_small/north.png",
+                east: "assets/generated/vox_bakes/weak_tree_oak_small/east.png",
+                south: "assets/generated/vox_bakes/weak_tree_oak_small/south.png",
+                west: "assets/generated/vox_bakes/weak_tree_oak_small/west.png",
+                thumbnail: "assets/generated/vox_bakes/weak_tree_oak_small/thumbnail.png",
+            ),
+            help_doc_id: "wiki.vox.vox_pipeline",
+        ),
+    ],
+)

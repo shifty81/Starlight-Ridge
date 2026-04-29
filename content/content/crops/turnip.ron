@@ -1,0 +1,7 @@
+(
+    id: "turnip",
+    display_name: "Turnip",
+    growth_days: 4,
+    regrow_days: None,
+    harvest_item_id: "turnip_item",
+)

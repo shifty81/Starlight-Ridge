@@ -1,0 +1,22 @@
+(
+    id: "phase52_layer_schema",
+    display_name: "Phase 52 Layered World Schema",
+    visible_layers: [
+        (id:"base_terrain", display_name:"Base Terrain", order:0, category:"terrain", editable:true, saved_to_map:true, supports_autotile:true, supports_simulation:false, default_visible:true, tooltip:"Core ground material: grass, dirt, sand, stone, ash."),
+        (id:"terrain_overlay_transition", display_name:"Terrain Overlay / Transition", order:10, category:"terrain", editable:true, saved_to_map:true, supports_autotile:true, supports_simulation:false, default_visible:true, tooltip:"Edges, blends, shorelines, path borders, cliff borders."),
+        (id:"liquid_region", display_name:"Liquid Region", order:20, category:"simulation_source", editable:true, saved_to_map:true, supports_autotile:true, supports_simulation:true, default_visible:true, tooltip:"Authored water/lava/oil source cells and containment hints."),
+        (id:"ground_state", display_name:"Ground State", order:30, category:"farming", editable:true, saved_to_map:true, supports_autotile:true, supports_simulation:true, default_visible:true, tooltip:"Tilled soil, watered soil, fertilizer, mud, slush."),
+        (id:"ground_cover", display_name:"Ground Cover", order:40, category:"decor", editable:true, saved_to_map:true, supports_autotile:false, supports_simulation:true, default_visible:true, tooltip:"Pebbles, flowers, reeds, leaves, ash, snow decals."),
+        (id:"props_vegetation", display_name:"Props / Vegetation", order:50, category:"objects", editable:true, saved_to_map:true, supports_autotile:false, supports_simulation:false, default_visible:true, tooltip:"Trees, bushes, rocks, logs, crops, resource props."),
+        (id:"structures", display_name:"Structures", order:60, category:"objects", editable:true, saved_to_map:true, supports_autotile:false, supports_simulation:false, default_visible:true, tooltip:"Buildings, bridges, fences, walls, machines."),
+        (id:"collision_interaction", display_name:"Collision / Interaction", order:70, category:"gameplay", editable:true, saved_to_map:true, supports_autotile:false, supports_simulation:false, default_visible:false, tooltip:"Blocking, triggers, interaction prompts, harvest/tool regions."),
+        (id:"spawns_regions", display_name:"Spawns / Regions", order:80, category:"gameplay", editable:true, saved_to_map:true, supports_autotile:false, supports_simulation:false, default_visible:false, tooltip:"NPC spawns, fish zones, encounter zones, biome regions."),
+        (id:"lighting_ambience", display_name:"Lighting / Ambience Markers", order:90, category:"render", editable:true, saved_to_map:true, supports_autotile:false, supports_simulation:false, default_visible:false, tooltip:"Light probes, fog zones, ambience areas, shadow mask hints."),
+    ],
+    derived_layers: [
+        (id:"fluid_depth_flow", display_name:"Fluid Depth / Flow", order:100, category:"derived_simulation", editable:false, saved_to_map:false, supports_autotile:false, supports_simulation:true, default_visible:false, tooltip:"Runtime liquid depth and directional flow cache."),
+        (id:"snow_ice_deposition", display_name:"Snow / Ice Deposition", order:110, category:"derived_simulation", editable:false, saved_to_map:false, supports_autotile:false, supports_simulation:true, default_visible:false, tooltip:"Derived snow depth, slush, and ice state."),
+        (id:"wetness_puddle_accumulation", display_name:"Wetness / Puddle Accumulation", order:120, category:"derived_simulation", editable:false, saved_to_map:false, supports_autotile:false, supports_simulation:true, default_visible:false, tooltip:"Rain wetness, puddle depth, and drying state."),
+        (id:"autotile_render_composite", display_name:"Autotile Render Composite", order:130, category:"derived_render", editable:false, saved_to_map:false, supports_autotile:true, supports_simulation:false, default_visible:false, tooltip:"Resolved render output from semantic layers and transition rules."),
+    ],
+)

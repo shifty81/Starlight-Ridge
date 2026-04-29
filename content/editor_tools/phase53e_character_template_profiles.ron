@@ -1,0 +1,75 @@
+CharacterTemplateProfileRegistry(
+    profiles: [
+        CharacterTemplateProfile(
+            id: "phase53e_body_a",
+            asset_id: "character_base_body_a_neutral_bald_clean",
+            dimensions: [56, 36, 96],
+            required_flags: ["bald", "clean_shaven", "neutral", "no_identity_traits"],
+            required_anchors: [
+                "feet_center_pivot",
+                "right_hand_grip",
+                "left_hand_grip",
+                "hair_anchor",
+                "hat_anchor",
+                "face_overlay_anchor",
+                "front_accessory_anchor",
+                "back_item_anchor",
+            ],
+            notes: "Slimmer neutral base body. Intended for player/NPC variants and outfit overlays.",
+        ),
+
+        CharacterTemplateProfile(
+            id: "phase53e_body_b",
+            asset_id: "character_base_body_b_neutral_bald_clean",
+            dimensions: [62, 38, 104],
+            required_flags: ["bald", "clean_shaven", "neutral", "no_identity_traits"],
+            required_anchors: [
+                "feet_center_pivot",
+                "right_hand_grip",
+                "left_hand_grip",
+                "hair_anchor",
+                "hat_anchor",
+                "face_overlay_anchor",
+                "front_accessory_anchor",
+                "back_item_anchor",
+            ],
+            notes: "Broader neutral base body. Intended for body variation, NPCs, and outfit overlays.",
+        ),
+
+        CharacterTemplateProfile(
+            id: "phase53e_player_neutral",
+            asset_id: "character_base_player_neutral_bald_clean",
+            dimensions: [60, 38, 104],
+            required_flags: ["bald", "clean_shaven", "neutral", "no_identity_traits"],
+            required_anchors: [
+                "feet_center_pivot",
+                "right_hand_grip",
+                "left_hand_grip",
+                "hair_anchor",
+                "hat_anchor",
+                "face_overlay_anchor",
+                "front_accessory_anchor",
+                "back_item_anchor",
+            ],
+            notes: "Initial player base template for rig preview and tool attachment work.",
+        ),
+
+        CharacterTemplateProfile(
+            id: "phase53e_npc_average",
+            asset_id: "character_base_npc_average_neutral_bald_clean",
+            dimensions: [56, 36, 96],
+            required_flags: ["bald", "clean_shaven", "neutral", "no_identity_traits"],
+            required_anchors: [
+                "feet_center_pivot",
+                "right_hand_grip",
+                "left_hand_grip",
+                "hair_anchor",
+                "hat_anchor",
+                "face_overlay_anchor",
+                "front_accessory_anchor",
+                "back_item_anchor",
+            ],
+            notes: "Initial average NPC base template for future NPC generator variations.",
+        ),
+    ],
+)

@@ -1,0 +1,26 @@
+(
+    phase: "53g",
+    title: "Voxel Panel Designer Polish + Composition Prep",
+    editor_path: "Assets -> Voxel Panels",
+    scope: [
+        "egui_only",
+        "panel_thumbnails",
+        "editable_sockets",
+        "layer_clipboard",
+        "mirror_rotate_transforms",
+        "composition_metadata",
+        "future_3d_viewport_prep",
+    ],
+    guardrails: [
+        "Preserve a single top-level editor shell.",
+        "Do not call full-shell render functions from inside asset panels.",
+        "Do not add gameplay changes.",
+        "Do not add full 3D rendering in this phase.",
+    ],
+    local_tests: [
+        "cargo check",
+        "RUN_EDITOR_DEBUG.bat",
+        "Assets -> Voxel Panels smoke test",
+        "Save kit and reload kit",
+    ],
+)

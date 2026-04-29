@@ -1,0 +1,41 @@
+CommandRegistry(
+    commands: [
+        CommandDef(
+            id: "voxel_rig.preview.placeholder",
+            label: "Voxel Rig / Preview Placeholder",
+            shell: "python",
+            args: [
+                "tools/scripts/voxel/phase53f_rig_preview_placeholder.py",
+                "--profile",
+                "phase53f_player_base_rig_preview",
+            ],
+            working_dir: ".",
+            output_panel: "Pipeline",
+            tags: ["voxel_rig", "phase53f", "preview"],
+        ),
+        CommandDef(
+            id: "voxel_rig.open_base.magicavoxel",
+            label: "Voxel Rig / Open Base in MagicaVoxel",
+            shell: "external_tool",
+            args: [
+                "magica_voxel",
+                "{selected_base_vox_path}",
+            ],
+            working_dir: ".",
+            output_panel: "Pipeline",
+            tags: ["voxel_rig", "magicavoxel", "external_tool"],
+        ),
+        CommandDef(
+            id: "voxel_rig.open_tool.magicavoxel",
+            label: "Voxel Rig / Open Tool in MagicaVoxel",
+            shell: "external_tool",
+            args: [
+                "magica_voxel",
+                "{selected_tool_vox_path}",
+            ],
+            working_dir: ".",
+            output_panel: "Pipeline",
+            tags: ["voxel_rig", "magicavoxel", "external_tool"],
+        ),
+    ],
+)

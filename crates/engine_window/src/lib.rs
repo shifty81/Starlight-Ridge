@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use glutin::config::{Config, ConfigTemplateBuilder, GlConfig};
 use glutin_winit::DisplayBuilder;
 use std::sync::Arc;

@@ -1,0 +1,14 @@
+(
+    phase: "53k.2",
+    title: "Voxel Panel Workbench Layout Fix",
+    summary: "Replaces the crowded all-in-one Voxel Panels layout with focused internal workbench modes for panel editing, composition, 3D preview, and diagnostics.",
+    gameplay_changes: false,
+    preview_is_read_only: true,
+    preserves_single_root_editor_shell: true,
+    workbench_modes: [
+        "Panel Editor",
+        "Composition",
+        "3D Preview",
+        "Diagnostics",
+    ],
+)

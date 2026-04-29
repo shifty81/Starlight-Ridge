@@ -1,0 +1,21 @@
+Phase 53f — Voxel Pixel Panel Designer Foundation
+
+Changed:
+- crates/app/src/egui_editor.rs
+- crates/game_data/src/defs.rs
+- crates/game_data/src/loader.rs
+
+Added:
+- content/editor_voxel_panels/README.md
+- content/editor_voxel_panels/panel_kits/starter_gui_panel_kit.ron
+- content/editor_voxel_panels/panel_kits/starter_building_wall_panel_kit.ron
+- docs/PHASE53F_VOXEL_PIXEL_PANEL_DESIGNER_FOUNDATION.md
+- PATCH_MANIFEST_phase53f.txt
+
+Notes:
+- Adds egui-only Assets → Voxel Panels tab.
+- Adds RON-backed voxel-pixel panel kit contracts.
+- Adds paint/erase/pick, depth slice selection, palette/material selection, RON save/load, and validation.
+- Does not add full 3D rendering.
+- Does not touch gameplay.
+- Preserves single-root editor shell guard.

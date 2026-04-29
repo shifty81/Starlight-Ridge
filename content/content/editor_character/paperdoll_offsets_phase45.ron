@@ -1,0 +1,22 @@
+(
+    id: "paperdoll_offsets_phase45",
+    display_name: "Phase 45 Paperdoll Slot Offsets",
+    coordinate_space: "frame_pixels",
+    frame_width: 48,
+    frame_height: 72,
+    foot_anchor: (x: 24, y: 68),
+    slots: [
+        (slot: "shadow", offset: (x: 0, y: 0), draw_order: 0, notes: "ground shadow anchored under feet"),
+        (slot: "base_body", offset: (x: 0, y: 0), draw_order: 10, notes: "base mannequin body"),
+        (slot: "hair_back", offset: (x: 0, y: 0), draw_order: 20, notes: "behind face and hats"),
+        (slot: "shirt", offset: (x: 0, y: 0), draw_order: 30, notes: "torso clothing"),
+        (slot: "pants", offset: (x: 0, y: 0), draw_order: 40, notes: "leg clothing"),
+        (slot: "boots", offset: (x: 0, y: 0), draw_order: 50, notes: "feet clothing"),
+        (slot: "face_detail", offset: (x: 0, y: 0), draw_order: 60, notes: "eyes, glasses, masks"),
+        (slot: "beard", offset: (x: 0, y: 0), draw_order: 70, notes: "facial hair"),
+        (slot: "hair_front", offset: (x: 0, y: 0), draw_order: 80, notes: "front hair overlay"),
+        (slot: "hat", offset: (x: 0, y: -2), draw_order: 90, notes: "headwear; slight upward default offset"),
+        (slot: "held_tool", offset: (x: 0, y: 0), draw_order: 100, notes: "tool sprite follows socket metadata"),
+        (slot: "backpack_or_rig", offset: (x: 0, y: 0), draw_order: 110, notes: "back equipment and future rig parts"),
+    ],
+)

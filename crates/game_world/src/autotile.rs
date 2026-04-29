@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{stable_terrain_hash, SemanticTerrainGrid, TerrainCardinalMask};
+use crate::{SemanticTerrainGrid, TerrainCardinalMask, stable_terrain_hash};
 
 #[derive(Debug, Clone, Default)]
 pub struct TerrainResolveCatalog {
@@ -73,7 +73,10 @@ pub struct ResolvedTerrainLayer {
 pub struct AutotileResolver;
 
 impl AutotileResolver {
-    pub fn resolve(grid: &SemanticTerrainGrid, catalog: &TerrainResolveCatalog) -> ResolvedTerrainLayer {
+    pub fn resolve(
+        grid: &SemanticTerrainGrid,
+        catalog: &TerrainResolveCatalog,
+    ) -> ResolvedTerrainLayer {
         let mut tiles = Vec::with_capacity(grid.cells.len().saturating_mul(2));
 
         for y in 0..grid.height {
@@ -83,7 +86,11 @@ impl AutotileResolver {
                 };
 
                 let terrain_id = cell.terrain_id.as_str();
-                let flags = catalog.terrain_flags.get(terrain_id).cloned().unwrap_or_default();
+                let flags = catalog
+                    .terrain_flags
+                    .get(terrain_id)
+                    .cloned()
+                    .unwrap_or_default();
                 let base_tile_id = select_base_tile_id(catalog, &grid.scene_id, terrain_id, x, y);
 
                 tiles.push(ResolvedTerrainTile {
@@ -107,8 +114,13 @@ impl AutotileResolver {
                 };
                 let terrain_id = cell.terrain_id.as_str();
 
-                for rule in catalog.transition_rules.iter().filter(|rule| rule.from.as_str() == terrain_id) {
-                    let mask = TerrainCardinalMask::for_target(grid, x as i32, y as i32, &rule.to).bits as u32;
+                for rule in catalog
+                    .transition_rules
+                    .iter()
+                    .filter(|rule| rule.from.as_str() == terrain_id)
+                {
+                    let mask = TerrainCardinalMask::for_target(grid, x as i32, y as i32, &rule.to)
+                        .bits as u32;
                     if mask == 0 {
                         continue;
                     }

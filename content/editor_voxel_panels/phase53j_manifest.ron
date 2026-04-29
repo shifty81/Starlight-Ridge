@@ -1,0 +1,22 @@
+(
+    phase: "53j",
+    title: "Voxel Composition 3D Preview Viewport",
+    summary: "Loads the Phase 53i preview RON and draws a read-only egui 3D composition preview with orbit/pan/zoom, baked voxel boxes, bounds, socket gizmos, and connection gizmos.",
+    editor_entry: "Assets -> Voxel Panels -> 3D Preview",
+    source_contract: "VoxelPanelCompositionMeshExportDef",
+    preserves_single_root_egui_shell: true,
+    gameplay_changes: false,
+    live_mesh_editing: false,
+    features: [
+        "Phase 53i RON load path",
+        "Export + load workflow",
+        "Read-only egui painter 3D preview",
+        "Orbit/pan/zoom camera controls",
+        "Baked voxel box drawing",
+        "Inclusive bounds drawing",
+        "Socket gizmo drawing",
+        "Connection gizmo drawing",
+        "Preview visibility toggles",
+    ],
+    next_phase: "Phase 53k should upgrade the preview toward a reusable voxel viewport module and then add picking/highlight without enabling live mesh editing yet.",
+)

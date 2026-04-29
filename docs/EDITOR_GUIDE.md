@@ -94,7 +94,7 @@ The editor is organised into nine top-level workspace tabs.
 | `K` | Eyedropper (pick) |
 | `1–9` | Select palette tile slot |
 
-> Note: Many panels are UI stubs pending implementation. See [ROADMAP.md](ROADMAP.md) for the implementation order.
+> Note: Several panels are still partial or stubbed. See [EDITOR_COMPLETION_ROADMAP.md](EDITOR_COMPLETION_ROADMAP.md) for the editor-specific finish order, and [ROADMAP.md](ROADMAP.md) for the broader game roadmap.
 
 ---
 

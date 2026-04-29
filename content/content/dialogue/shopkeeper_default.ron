@@ -1,0 +1,14 @@
+(
+    id: "shopkeeper_default",
+    start: "root",
+    nodes: [
+        (
+            id: "root",
+            text: "Fresh seeds and simple tools. Best prices in town.",
+            responses: [
+                (text: "Show me your goods.", next: "open_shop"),
+                (text: "Maybe later.", next: "end"),
+            ],
+        ),
+    ],
+)

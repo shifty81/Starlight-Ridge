@@ -74,9 +74,14 @@ impl EditorAnimationPipelineReport {
 pub fn log_editor_animation_pipeline_report(registry: &ContentRegistry) {
     let report = EditorAnimationPipelineReport::from_registry(registry);
     if report.pipelines == 0 {
-        log::warn!("phase21 editor animation pipeline is not loaded; animation timeline/event editing stays scaffold-only");
+        log::warn!(
+            "phase21 editor animation pipeline is not loaded; animation timeline/event editing stays scaffold-only"
+        );
         return;
     }
 
-    log::info!("phase21 editor animation pipeline ready: {}", report.summary());
+    log::info!(
+        "phase21 editor animation pipeline ready: {}",
+        report.summary()
+    );
 }

@@ -1,0 +1,38 @@
+[
+  {
+    "file": "character_base_body_a_neutral_bald_clean.vox",
+    "dimensions": [
+      56,
+      36,
+      96
+    ],
+    "voxels": 28314
+  },
+  {
+    "file": "character_base_body_b_neutral_bald_clean.vox",
+    "dimensions": [
+      62,
+      38,
+      104
+    ],
+    "voxels": 35588
+  },
+  {
+    "file": "character_base_player_neutral_bald_clean.vox",
+    "dimensions": [
+      60,
+      38,
+      104
+    ],
+    "voxels": 32325
+  },
+  {
+    "file": "character_base_npc_average_neutral_bald_clean.vox",
+    "dimensions": [
+      56,
+      36,
+      96
+    ],
+    "voxels": 30151
+  }
+]

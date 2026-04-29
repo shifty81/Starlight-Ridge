@@ -1,0 +1,10 @@
+(
+    id: "repair_bridge",
+    display_name: "Repair the Bridge",
+    objectives: [
+        "Bring 20 wood to the carpenter",
+    ],
+    rewards: [
+        "unlock_forest_bridge",
+    ],
+)

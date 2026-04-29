@@ -1,0 +1,16 @@
+Starlight Ridge - Phase 53b In-Project Pixel-Voxel Generator Foundation
+
+Adds a repeatable project-owned pixel-voxel generator foundation.
+This patch intentionally does not attempt final art quality.
+
+Included:
+- crates/voxel_generator scaffold
+- generator profiles and command profiles
+- external tool bridge config for MagicaVoxel, Blockbench, Blender
+- generated example .vox outputs for character bases and tools
+- docs for Phase 53b and Phase 53c handoff
+
+Workflow target:
+Generate -> Preview -> Open in MagicaVoxel -> Clean up -> Save -> Refresh -> Validate -> Register
+
+Character bases must be bald, clean-shaven, and identity-neutral.

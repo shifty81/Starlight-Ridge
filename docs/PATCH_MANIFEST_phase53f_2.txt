@@ -1,0 +1,20 @@
+Starlight Ridge — Phase 53f_2 Runtime RON Fix
+
+Focus:
+- Fix voxel panel kit RON syntax that blocked game/editor startup.
+- Keep Phase 53f Voxel Pixel Panel Designer intact.
+- Keep Phase 53f_1 eframe App::ui hotfix intact.
+- No gameplay changes.
+- No 3D rendering changes.
+- No editor shell nesting changes.
+
+Changed files:
+- content/voxel_panels/building_wall_micro_voxel_kit.ron
+- content/voxel_panels/gui_panel_basic_micro_voxel_kit.ron
+- docs/PHASE53F_2_RUNTIME_RON_FIX.md
+- docs/PATCH_MANIFEST_phase53f_2.txt
+
+Expected result:
+- cargo build remains green.
+- editor/game no longer fail on `Expected opening '('` for voxel panel kit color_rgba fields.
+- Deprecated egui Panel::show warnings may remain and should be cleaned in a later warning-only pass.

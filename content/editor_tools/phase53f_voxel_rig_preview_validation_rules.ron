@@ -1,0 +1,29 @@
+VoxelRigPreviewValidationRules(
+    rules: [
+        ValidationRule(
+            id: "rig_preview.base_exists",
+            severity: Error,
+            message: "Rig preview profile references a missing base .vox file.",
+        ),
+        ValidationRule(
+            id: "rig_preview.base_bald_clean",
+            severity: Error,
+            message: "Rig preview profiles must clearly identify base templates as bald and clean-shaven.",
+        ),
+        ValidationRule(
+            id: "rig_preview.required_anchors",
+            severity: Warning,
+            message: "Rig preview profile is missing one or more required attachment anchors.",
+        ),
+        ValidationRule(
+            id: "rig_preview.tool_assets_available",
+            severity: Warning,
+            message: "No tool .vox assets were discovered for attachment preview.",
+        ),
+        ValidationRule(
+            id: "rig_preview.no_nested_editor",
+            severity: Error,
+            message: "Voxel Rig Preview tab must render as a child panel only and must never call the full editor shell renderer.",
+        ),
+    ],
+)

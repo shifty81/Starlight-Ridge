@@ -8,26 +8,58 @@ use anyhow::Context;
 use engine_assets::AssetRoot;
 use engine_audio::AudioBootstrap;
 use engine_debug::DebugOverlayState;
-use engine_input::{handle_keyboard_event, InputSnapshot};
-use engine_render_gl::{EditorShellRenderState, RenderBootstrap, SpriteInstance, SpriteRenderData, TileInstance, TileMapRenderData, WorldLighting};
+use engine_input::{InputSnapshot, handle_keyboard_event};
+use engine_render_gl::{
+    EditorShellRenderState, RenderBootstrap, SpriteInstance, SpriteRenderData, TileInstance,
+    TileMapRenderData, VoxelSceneRenderData, VoxelVertex, WorldLighting,
+};
 use engine_time::FrameTimer;
-use engine_window::{create_gl_window, WindowConfig};
+use engine_window::{WindowConfig, create_gl_window};
 use game_core::modes::bootstrap_state;
 use game_core::state::InteractionMode;
 use game_data::defs::{MapLayersDef, SpriteSheetDef, TileLayerDef, TilesetDef};
 use game_data::registry::ContentRegistry;
 use game_world::autotile::{
-    AutotileResolver, ResolvedTileKind, TerrainFlags, TerrainResolveCatalog,
-    TerrainTransitionRule, TerrainVariantChoice, TerrainVariantSet,
+    AutotileResolver, ResolvedTileKind, TerrainFlags, TerrainResolveCatalog, TerrainTransitionRule,
+    TerrainVariantChoice, TerrainVariantSet,
 };
 use game_world::{SemanticTerrainCell, SemanticTerrainGrid, WorldBootstrap};
+use serde::Deserialize;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, WindowEvent};
-use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::WindowId;
 
 mod egui_editor;
+
+#[derive(Debug, Clone, Deserialize)]
+struct VoxelObjectPlacementList {
+    schema_version: u32,
+    map_id: String,
+    objects: Vec<VoxelObjectPlacement>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct VoxelObjectPlacement {
+    id: String,
+    display_name: String,
+    source_kind: String,
+    source_id: String,
+    source_path: String,
+    x: f32,
+    y: f32,
+    z: f32,
+    yaw_degrees: f32,
+    footprint_width: f32,
+    footprint_height: f32,
+    height: f32,
+    anchor_x: f32,
+    anchor_y: f32,
+    collision_kind: String,
+    locked: bool,
+    notes: String,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LaunchMode {
@@ -53,9 +85,8 @@ impl LaunchMode {
 
 /// Initializes process-wide runtime logging for the game/editor binaries.
 pub fn init_runtime_logging(label: &str) {
-    let mut builder = env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info"),
-    );
+    let mut builder =
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
     builder.format_timestamp_secs();
     builder.format_target(false);
 
@@ -73,9 +104,9 @@ pub fn init_runtime_logging(label: &str) {
             label,
             log_dir.display()
         ),
-        Err(error) => eprintln!(
-            "Starlight Ridge could not prepare runtime logs for {label}: {error:#}"
-        ),
+        Err(error) => {
+            eprintln!("Starlight Ridge could not prepare runtime logs for {label}: {error:#}")
+        }
     }
 }
 
@@ -130,7 +161,14 @@ fn install_runtime_panic_hook(label: &str) {
     std::panic::set_hook(Box::new(move |panic_info| {
         let location = panic_info
             .location()
-            .map(|location| format!("{}:{}:{}", location.file(), location.line(), location.column()))
+            .map(|location| {
+                format!(
+                    "{}:{}:{}",
+                    location.file(),
+                    location.line(),
+                    location.column()
+                )
+            })
             .unwrap_or_else(|| "unknown location".to_string());
 
         let payload = panic_info
@@ -173,7 +211,13 @@ fn show_runtime_failure_dialog(label: &str, body: &str, log_path: Option<&Path>)
     );
 
     if Command::new("powershell")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &script,
+        ])
         .spawn()
         .is_err()
     {
@@ -250,12 +294,34 @@ fn run_with_mode(launch_mode: LaunchMode) -> anyhow::Result<()> {
     let _audio = AudioBootstrap::new();
     let _debug = DebugOverlayState::new();
     let tile_map = build_tile_map_render_data(&project_root, &registry, &boot_state.active_map_id)
-        .with_context(|| format!("failed to build render data for map '{}'", boot_state.active_map_id))?;
+        .with_context(|| {
+            format!(
+                "failed to build render data for map '{}'",
+                boot_state.active_map_id
+            )
+        })?;
 
-    let player_sprite_data = build_sprite_render_data(&project_root, &registry, "phase5_entities", 32, 48);
-    let prop_sprite_data = build_sprite_render_data(&project_root, &registry, "oceans_heart_bridge_phase17", 32, 32);
-    let game_runtime = RuntimeWorldState::new(&registry, &boot_state.active_map_id, tile_map.as_ref());
-    let static_prop_sprites = build_static_prop_instances(&registry, &boot_state.active_map_id, tile_map.as_ref());
+    let player_sprite_data =
+        build_sprite_render_data(&project_root, &registry, "phase5_entities", 32, 48);
+    let prop_sprite_data = build_sprite_render_data(
+        &project_root,
+        &registry,
+        "oceans_heart_bridge_phase17",
+        32,
+        32,
+    );
+    let game_runtime =
+        RuntimeWorldState::new(&registry, &boot_state.active_map_id, tile_map.as_ref());
+    let static_prop_sprites =
+        build_static_prop_instances(&registry, &boot_state.active_map_id, tile_map.as_ref());
+    let voxel_scene =
+        build_voxel_scene_render_data(&project_root, &boot_state.active_map_id, tile_map.as_ref())
+            .with_context(|| {
+                format!(
+                    "failed to build voxel scene render data for map '{}'",
+                    boot_state.active_map_id
+                )
+            })?;
 
     log::info!(
         "phase bootstrap ready: launch={} mode={:?} interaction={:?} map={} content=[{}] tilemap={}",
@@ -282,6 +348,7 @@ fn run_with_mode(launch_mode: LaunchMode) -> anyhow::Result<()> {
         player_sprite_data,
         prop_sprite_data,
         static_prop_sprites,
+        voxel_scene,
         game_runtime,
     );
     event_loop.run_app(&mut app).context("app loop failed")?;
@@ -299,17 +366,29 @@ fn locate_project_root() -> anyhow::Result<PathBuf> {
         return Ok(candidate);
     }
 
-    if let Some(parent) = candidate.parent().and_then(|p| p.parent()).map(|p| p.to_path_buf()) {
+    if let Some(parent) = candidate
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.to_path_buf())
+    {
         if parent.join("content").exists() {
             return Ok(parent);
         }
     }
 
-    anyhow::bail!("could not locate project root containing /content from {}", candidate.display())
+    anyhow::bail!(
+        "could not locate project root containing /content from {}",
+        candidate.display()
+    )
 }
 
-fn write_editor_live_preview_manifest(project_root: &Path, active_map_id: &str) -> anyhow::Result<()> {
-    let manifest_path = project_root.join("artifacts").join("editor_live_preview.ron");
+fn write_editor_live_preview_manifest(
+    project_root: &Path,
+    active_map_id: &str,
+) -> anyhow::Result<()> {
+    let manifest_path = project_root
+        .join("artifacts")
+        .join("editor_live_preview.ron");
     if let Some(parent) = manifest_path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
@@ -332,7 +411,10 @@ fn write_editor_live_preview_manifest(project_root: &Path, active_map_id: &str) 
     );
     fs::write(&manifest_path, body)
         .with_context(|| format!("failed to write {}", manifest_path.display()))?;
-    log::info!("editor live-preview manifest updated: {}", manifest_path.display());
+    log::info!(
+        "editor live-preview manifest updated: {}",
+        manifest_path.display()
+    );
     Ok(())
 }
 
@@ -426,7 +508,6 @@ fn is_live_preview_file(path: &Path) -> bool {
     )
 }
 
-
 #[derive(Debug, Clone)]
 struct TileRoleState {
     role: String,
@@ -441,7 +522,10 @@ struct TileRoleState {
 
 impl TileRoleState {
     fn inferred(tile_id: &str) -> Self {
-        let role = if tile_id.contains("water") || tile_id.starts_with("shore") || tile_id.starts_with("depth") {
+        let role = if tile_id.contains("water")
+            || tile_id.starts_with("shore")
+            || tile_id.starts_with("depth")
+        {
             "water"
         } else if tile_id.contains("tilled") {
             "crop_soil"
@@ -457,9 +541,16 @@ impl TileRoleState {
             "fence"
         } else if tile_id.contains("door") || tile_id.contains("gate") {
             "door"
-        } else if tile_id.contains("roof") || tile_id.contains("wall") || tile_id.contains("farmhouse") {
+        } else if tile_id.contains("roof")
+            || tile_id.contains("wall")
+            || tile_id.contains("farmhouse")
+        {
             "building"
-        } else if tile_id.contains("tree") || tile_id.contains("boulder") || tile_id.contains("barrel") || tile_id.contains("crate") {
+        } else if tile_id.contains("tree")
+            || tile_id.contains("boulder")
+            || tile_id.contains("barrel")
+            || tile_id.contains("crate")
+        {
             "blocking_prop"
         } else if tile_id.contains("grass") {
             "grass"
@@ -569,12 +660,18 @@ const EDITOR_COLLISION_CYCLE: &[&str] = &[
 ];
 
 fn next_cycle_value(current: &str, values: &[&str]) -> String {
-    let index = values.iter().position(|value| *value == current).unwrap_or(0);
+    let index = values
+        .iter()
+        .position(|value| *value == current)
+        .unwrap_or(0);
     values[(index + 1) % values.len()].to_string()
 }
 
 fn load_tile_role_state(project_root: &Path, tile_id: &str) -> TileRoleState {
-    let path = project_root.join("content").join("tiles").join("base_tileset_roles.ron");
+    let path = project_root
+        .join("content")
+        .join("tiles")
+        .join("base_tileset_roles.ron");
     let Ok(body) = fs::read_to_string(&path) else {
         return TileRoleState::inferred(tile_id);
     };
@@ -591,7 +688,8 @@ fn load_tile_role_state(project_root: &Path, tile_id: &str) -> TileRoleState {
 
     let mut state = TileRoleState::from_collision(&role, &collision);
     state.walkable = extract_bool_field(block, "walkable").unwrap_or(state.walkable);
-    state.blocks_movement = extract_bool_field(block, "blocks_movement").unwrap_or(state.blocks_movement);
+    state.blocks_movement =
+        extract_bool_field(block, "blocks_movement").unwrap_or(state.blocks_movement);
     state.water = extract_bool_field(block, "water").unwrap_or(state.water);
     state.interactable = extract_bool_field(block, "interactable").unwrap_or(state.interactable);
     state.crop_soil = extract_bool_field(block, "crop_soil").unwrap_or(state.crop_soil);
@@ -599,16 +697,22 @@ fn load_tile_role_state(project_root: &Path, tile_id: &str) -> TileRoleState {
     state
 }
 
-fn save_tile_role_state(project_root: &Path, tile_id: &str, state: &TileRoleState) -> anyhow::Result<()> {
-    let path = project_root.join("content").join("tiles").join("base_tileset_roles.ron");
+fn save_tile_role_state(
+    project_root: &Path,
+    tile_id: &str,
+    state: &TileRoleState,
+) -> anyhow::Result<()> {
+    let path = project_root
+        .join("content")
+        .join("tiles")
+        .join("base_tileset_roles.ron");
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
 
     let mut body = if path.exists() {
-        fs::read_to_string(&path)
-            .with_context(|| format!("failed to read {}", path.display()))?
+        fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))?
     } else {
         "(\n    tileset: \"base_tiles\",\n    source: \"content/tiles/base_tileset.ron\",\n    entries: [\n    ],\n)\n".to_string()
     };
@@ -627,8 +731,7 @@ fn save_tile_role_state(project_root: &Path, tile_id: &str, state: &TileRoleStat
         body.push_str(&format!("\n{}\n", entry));
     }
 
-    fs::write(&path, body)
-        .with_context(|| format!("failed to write {}", path.display()))?;
+    fs::write(&path, body).with_context(|| format!("failed to write {}", path.display()))?;
     log::info!(
         "native Asset Studio saved tile role metadata: tile={} role={} collision={} file={}",
         tile_id,
@@ -642,7 +745,9 @@ fn save_tile_role_state(project_root: &Path, tile_id: &str, state: &TileRoleStat
 fn find_role_entry_range(body: &str, tile_id: &str) -> Option<(usize, usize)> {
     let needle = format!("tile_id: \"{}\"", tile_id);
     let tile_pos = body.find(&needle)?;
-    let start = body[..tile_pos].rfind("        (").or_else(|| body[..tile_pos].rfind("("))?;
+    let start = body[..tile_pos]
+        .rfind("        (")
+        .or_else(|| body[..tile_pos].rfind("("))?;
     let relative_end = body[tile_pos..].find("),")?;
     Some((start, tile_pos + relative_end + 2))
 }
@@ -682,11 +787,17 @@ fn build_tile_map_render_data(
     map_id: &str,
 ) -> anyhow::Result<Option<TileMapRenderData>> {
     let Some(map_bundle) = registry.maps.get(map_id) else {
-        log::warn!("no map bundle found for '{}'; renderer will use fallback grid", map_id);
+        log::warn!(
+            "no map bundle found for '{}'; renderer will use fallback grid",
+            map_id
+        );
         return Ok(None);
     };
     let Some(layers) = registry.map_layers.get(map_id) else {
-        log::warn!("no layers.ron found for '{}'; renderer will use fallback grid", map_id);
+        log::warn!(
+            "no layers.ron found for '{}'; renderer will use fallback grid",
+            map_id
+        );
         return Ok(None);
     };
     let Some(tileset) = registry.tilesets.get(&map_bundle.metadata.tileset) else {
@@ -771,7 +882,10 @@ fn build_tile_map_render_data(
     }
 
     if tiles.is_empty() {
-        log::warn!("map '{}' produced zero visible tiles; renderer will use fallback grid", map_id);
+        log::warn!(
+            "map '{}' produced zero visible tiles; renderer will use fallback grid",
+            map_id
+        );
         return Ok(None);
     }
 
@@ -800,7 +914,6 @@ fn build_tile_map_render_data(
     }))
 }
 
-
 fn build_sprite_render_data(
     project_root: &Path,
     registry: &ContentRegistry,
@@ -809,7 +922,12 @@ fn build_sprite_render_data(
     sprite_height: u32,
 ) -> Option<SpriteRenderData> {
     let sheet = registry.sprite_sheets.get(sheet_id)?;
-    Some(sprite_render_data_from_sheet(project_root, sheet, sprite_width, sprite_height))
+    Some(sprite_render_data_from_sheet(
+        project_root,
+        sheet,
+        sprite_width,
+        sprite_height,
+    ))
 }
 
 fn sprite_render_data_from_sheet(
@@ -876,7 +994,175 @@ fn prop_atlas_cell(kind: &str, entry_lookup: &HashMap<&str, (u32, u32)>) -> Opti
     entry_lookup.get(preferred).copied()
 }
 
+fn build_voxel_scene_render_data(
+    project_root: &Path,
+    map_id: &str,
+    tile_map: Option<&TileMapRenderData>,
+) -> anyhow::Result<Option<VoxelSceneRenderData>> {
+    let Some(tile_map) = tile_map else {
+        return Ok(None);
+    };
 
+    let voxel_objects_path = project_root
+        .join("content")
+        .join("maps")
+        .join(map_id)
+        .join("voxel_objects.ron");
+    if !voxel_objects_path.exists() {
+        return Ok(None);
+    }
+
+    let placements: VoxelObjectPlacementList =
+        game_data::loader::load_ron_file(&voxel_objects_path)
+            .with_context(|| format!("failed to load {}", voxel_objects_path.display()))?;
+    if placements.objects.is_empty() {
+        return Ok(None);
+    }
+
+    let tile_width = tile_map.tile_width.max(1) as f32;
+    let tile_height = tile_map.tile_height.max(1) as f32;
+    let world_origin_x = -((tile_map.map_width.max(1) * tile_map.tile_width.max(1)) as f32) * 0.5;
+    let world_origin_y = -((tile_map.map_height.max(1) * tile_map.tile_height.max(1)) as f32) * 0.5;
+
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+    let mut bounds_min = glam::Vec3::splat(f32::INFINITY);
+    let mut bounds_max = glam::Vec3::splat(f32::NEG_INFINITY);
+
+    for object in &placements.objects {
+        let x0 = world_origin_x + object.x * tile_width;
+        let y0 = world_origin_y + object.y * tile_height;
+        let z0 = object.z.max(0.0) * tile_height;
+        let x1 = x0 + object.footprint_width.max(0.25) * tile_width;
+        let y1 = y0 + object.footprint_height.max(0.25) * tile_height;
+        let z1 = z0 + object.height.max(0.25) * tile_height;
+
+        let min = glam::Vec3::new(x0.min(x1), y0.min(y1), z0.min(z1));
+        let max = glam::Vec3::new(x0.max(x1), y0.max(y1), z0.max(z1));
+        bounds_min = bounds_min.min(min);
+        bounds_max = bounds_max.max(max);
+
+        let base_color = color_for_voxel_object(object);
+        push_voxel_prism_mesh(&mut vertices, &mut indices, min, max, base_color);
+    }
+
+    if vertices.is_empty() || indices.is_empty() {
+        return Ok(None);
+    }
+
+    log::info!(
+        "voxel scene ready: map={} schema={} placements={} bounds=({:.1},{:.1},{:.1})..({:.1},{:.1},{:.1})",
+        placements.map_id,
+        placements.schema_version,
+        placements.objects.len(),
+        bounds_min.x,
+        bounds_min.y,
+        bounds_min.z,
+        bounds_max.x,
+        bounds_max.y,
+        bounds_max.z,
+    );
+
+    Ok(Some(VoxelSceneRenderData {
+        vertices,
+        indices,
+        bounds_min: bounds_min.to_array(),
+        bounds_max: bounds_max.to_array(),
+    }))
+}
+
+fn color_for_voxel_object(object: &VoxelObjectPlacement) -> [f32; 4] {
+    let mut seed = 0_u32;
+    for byte in object
+        .source_id
+        .bytes()
+        .chain(object.display_name.bytes())
+        .chain(object.id.bytes())
+        .chain(object.source_path.bytes())
+    {
+        seed = seed.wrapping_mul(16777619).wrapping_add(byte as u32 + 1);
+    }
+
+    let tint = if object.locked { 0.72 } else { 1.0 };
+    let source_boost = if object.source_kind.contains("phase52") {
+        [0.08, 0.12, 0.0]
+    } else {
+        [0.0, 0.06, 0.12]
+    };
+    let collision_boost = if object.collision_kind.contains("solid") {
+        [0.10, 0.02, 0.02]
+    } else {
+        [0.0, 0.03, 0.0]
+    };
+    let note_boost = (object.notes.len() as f32 / 240.0).clamp(0.0, 0.08);
+    let anchor_bias =
+        ((object.anchor_x + object.anchor_y + object.yaw_degrees.abs()) / 360.0).clamp(0.0, 0.12);
+    let mut color = [
+        (0.30 + ((seed >> 0 & 0xFF) as f32 / 255.0) * 0.45) * tint
+            + source_boost[0]
+            + collision_boost[0],
+        (0.32 + ((seed >> 8 & 0xFF) as f32 / 255.0) * 0.40) * tint
+            + source_boost[1]
+            + collision_boost[1]
+            + note_boost,
+        (0.34 + ((seed >> 16 & 0xFF) as f32 / 255.0) * 0.38) * tint
+            + source_boost[2]
+            + collision_boost[2]
+            + anchor_bias,
+        0.92,
+    ];
+    for channel in &mut color[..3] {
+        *channel = channel.clamp(0.18, 0.95);
+    }
+    color
+}
+
+fn push_voxel_prism_mesh(
+    vertices: &mut Vec<VoxelVertex>,
+    indices: &mut Vec<u32>,
+    min: glam::Vec3,
+    max: glam::Vec3,
+    base_color: [f32; 4],
+) {
+    let corners = [
+        [min.x, min.y, min.z],
+        [max.x, min.y, min.z],
+        [max.x, max.y, min.z],
+        [min.x, max.y, min.z],
+        [min.x, min.y, max.z],
+        [max.x, min.y, max.z],
+        [max.x, max.y, max.z],
+        [min.x, max.y, max.z],
+    ];
+    let faces = [
+        ([0, 1, 2, 3], shade_color(base_color, 0.64)),
+        ([4, 5, 6, 7], shade_color(base_color, 1.08)),
+        ([0, 1, 5, 4], shade_color(base_color, 0.82)),
+        ([1, 2, 6, 5], shade_color(base_color, 0.92)),
+        ([2, 3, 7, 6], shade_color(base_color, 0.76)),
+        ([3, 0, 4, 7], shade_color(base_color, 0.70)),
+    ];
+
+    for (corner_indices, face_color) in faces {
+        let base = vertices.len() as u32;
+        for corner in corner_indices {
+            vertices.push(VoxelVertex {
+                position: corners[corner],
+                color: face_color,
+            });
+        }
+        indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+}
+
+fn shade_color(color: [f32; 4], multiplier: f32) -> [f32; 4] {
+    [
+        (color[0] * multiplier).clamp(0.0, 1.0),
+        (color[1] * multiplier).clamp(0.0, 1.0),
+        (color[2] * multiplier).clamp(0.0, 1.0),
+        color[3],
+    ]
+}
 
 fn build_terrain_resolve_catalog(
     registry: &ContentRegistry,
@@ -1063,15 +1349,20 @@ fn semantic_grid_from_layer(
     let legend: HashMap<char, &str> = layer
         .legend
         .iter()
-        .filter_map(|entry| entry.symbol.chars().next().map(|symbol| (symbol, entry.tile_id.as_str())))
+        .filter_map(|entry| {
+            entry
+                .symbol
+                .chars()
+                .next()
+                .map(|symbol| (symbol, entry.tile_id.as_str()))
+        })
         .collect();
 
     let mut cells = Vec::with_capacity((map_width as usize).saturating_mul(map_height as usize));
     for y in 0..map_height as usize {
-        let row = layer
-            .rows
-            .get(y)
-            .ok_or_else(|| anyhow::anyhow!("map '{}' layer '{}' missing row {}", map_id, layer.id, y))?;
+        let row = layer.rows.get(y).ok_or_else(|| {
+            anyhow::anyhow!("map '{}' layer '{}' missing row {}", map_id, layer.id, y)
+        })?;
         for (x, symbol) in row.chars().enumerate().take(map_width as usize) {
             let terrain_id = legend.get(&symbol).ok_or_else(|| {
                 anyhow::anyhow!(
@@ -1098,11 +1389,21 @@ fn semantic_grid_from_layer(
     SemanticTerrainGrid::new(map_id.to_string(), map_width, map_height, cells)
 }
 
-fn layer_to_tile_grid(layer: &TileLayerDef, map_width: u32, map_height: u32) -> Vec<Vec<Option<String>>> {
+fn layer_to_tile_grid(
+    layer: &TileLayerDef,
+    map_width: u32,
+    map_height: u32,
+) -> Vec<Vec<Option<String>>> {
     let legend: HashMap<char, &str> = layer
         .legend
         .iter()
-        .filter_map(|entry| entry.symbol.chars().next().map(|symbol| (symbol, entry.tile_id.as_str())))
+        .filter_map(|entry| {
+            entry
+                .symbol
+                .chars()
+                .next()
+                .map(|symbol| (symbol, entry.tile_id.as_str()))
+        })
         .collect();
 
     let mut tile_grid = vec![vec![None::<String>; map_width as usize]; map_height as usize];
@@ -1123,7 +1424,11 @@ fn is_semantic_terrain_layer(layer: &TileLayerDef, grid: &[Vec<Option<String>>])
     if id.contains("decor") || id.contains("prop") || id.contains("object") {
         return false;
     }
-    if id.contains("ground") || id.contains("terrain") || id.contains("soil") || id.contains("water") {
+    if id.contains("ground")
+        || id.contains("terrain")
+        || id.contains("soil")
+        || id.contains("water")
+    {
         return true;
     }
 
@@ -1202,7 +1507,11 @@ fn push_direct_layer_tiles(
     layer_id: &str,
 ) {
     for (y, row) in grid.iter().enumerate() {
-        for (x, tile_id) in row.iter().enumerate().filter_map(|(x, entry)| entry.as_deref().map(|tile_id| (x, tile_id))) {
+        for (x, tile_id) in row
+            .iter()
+            .enumerate()
+            .filter_map(|(x, entry)| entry.as_deref().map(|tile_id| (x, tile_id)))
+        {
             if let Some((atlas_x, atlas_y)) = atlas_lookup.get(tile_id).copied() {
                 tiles.push(TileInstance {
                     x: x as u32,
@@ -1277,7 +1586,6 @@ impl TerrainKind {
             _ => None,
         }
     }
-
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1304,13 +1612,13 @@ struct RuntimeWorldState {
 }
 
 impl RuntimeWorldState {
-    fn new(
-        registry: &ContentRegistry,
-        map_id: &str,
-        tile_map: Option<&TileMapRenderData>,
-    ) -> Self {
-        let tile_width = tile_map.map(|map| map.tile_width.max(1) as f32).unwrap_or(32.0);
-        let tile_height = tile_map.map(|map| map.tile_height.max(1) as f32).unwrap_or(32.0);
+    fn new(registry: &ContentRegistry, map_id: &str, tile_map: Option<&TileMapRenderData>) -> Self {
+        let tile_width = tile_map
+            .map(|map| map.tile_width.max(1) as f32)
+            .unwrap_or(32.0);
+        let tile_height = tile_map
+            .map(|map| map.tile_height.max(1) as f32)
+            .unwrap_or(32.0);
         let world_width = tile_map
             .map(|map| (map.map_width.max(1) * map.tile_width.max(1)) as f32)
             .unwrap_or(1280.0);
@@ -1319,18 +1627,20 @@ impl RuntimeWorldState {
             .unwrap_or(896.0);
 
         let map = registry.maps.get(map_id);
-        let spawn = map
-            .and_then(|map| {
-                map.spawns
-                    .iter()
-                    .find(|spawn| spawn.kind == "player" || spawn.id == "player_start")
-            });
+        let spawn = map.and_then(|map| {
+            map.spawns
+                .iter()
+                .find(|spawn| spawn.kind == "player" || spawn.id == "player_start")
+        });
 
         let spawn_x = spawn.map(|spawn| spawn.x.max(0) as f32).unwrap_or(2.0);
         let spawn_y = spawn.map(|spawn| spawn.y.max(0) as f32).unwrap_or(2.0);
         let player_width = 32.0;
         let player_height = 48.0;
-        let ambient_light = map.map(|map| map.metadata.ambient_light).unwrap_or(0.88).clamp(0.2, 1.2);
+        let ambient_light = map
+            .map(|map| map.metadata.ambient_light)
+            .unwrap_or(0.88)
+            .clamp(0.2, 1.2);
 
         Self {
             player_x: spawn_x * tile_width,
@@ -1376,20 +1686,33 @@ impl RuntimeWorldState {
             self.animation_time += delta_seconds;
 
             if dy.abs() >= dx.abs() {
-                self.facing = if dy >= 0.0 { PlayerFacing::Down } else { PlayerFacing::Up };
+                self.facing = if dy >= 0.0 {
+                    PlayerFacing::Down
+                } else {
+                    PlayerFacing::Up
+                };
             } else {
-                self.facing = if dx >= 0.0 { PlayerFacing::Right } else { PlayerFacing::Left };
+                self.facing = if dx >= 0.0 {
+                    PlayerFacing::Right
+                } else {
+                    PlayerFacing::Left
+                };
             }
         } else {
             self.animation_time = 0.0;
         }
 
-        self.player_x = self.player_x.clamp(0.0, (self.world_width - self.player_width).max(0.0));
-        self.player_y = self.player_y.clamp(0.0, (self.world_height - self.player_height).max(0.0));
+        self.player_x = self
+            .player_x
+            .clamp(0.0, (self.world_width - self.player_width).max(0.0));
+        self.player_y = self
+            .player_y
+            .clamp(0.0, (self.world_height - self.player_height).max(0.0));
 
         // Target contract: 1 in-game day = 3 real-world hours.
         const GAME_MINUTES_PER_REAL_SECOND: f32 = 1440.0 / (3.0 * 60.0 * 60.0);
-        self.game_minutes = (self.game_minutes + delta_seconds * GAME_MINUTES_PER_REAL_SECOND) % 1440.0;
+        self.game_minutes =
+            (self.game_minutes + delta_seconds * GAME_MINUTES_PER_REAL_SECOND) % 1440.0;
     }
 
     fn player_sprites(&self) -> [SpriteInstance; 1] {
@@ -1440,7 +1763,6 @@ impl RuntimeWorldState {
     }
 }
 
-
 struct BootstrapApp {
     project_root: PathBuf,
     registry: ContentRegistry,
@@ -1452,6 +1774,7 @@ struct BootstrapApp {
     player_sprite_data: Option<SpriteRenderData>,
     prop_sprite_data: Option<SpriteRenderData>,
     static_prop_sprites: Vec<SpriteInstance>,
+    voxel_scene: Option<VoxelSceneRenderData>,
     game_runtime: RuntimeWorldState,
     timer: FrameTimer,
     input: InputSnapshot,
@@ -1471,6 +1794,7 @@ impl BootstrapApp {
         player_sprite_data: Option<SpriteRenderData>,
         prop_sprite_data: Option<SpriteRenderData>,
         static_prop_sprites: Vec<SpriteInstance>,
+        voxel_scene: Option<VoxelSceneRenderData>,
         game_runtime: RuntimeWorldState,
     ) -> Self {
         let asset_watch = AssetWatchState::new(&project_root);
@@ -1490,6 +1814,7 @@ impl BootstrapApp {
             player_sprite_data,
             prop_sprite_data,
             static_prop_sprites,
+            voxel_scene,
             game_runtime,
             timer: FrameTimer::new(),
             input: InputSnapshot::default(),
@@ -1513,15 +1838,33 @@ impl BootstrapApp {
     fn reload_live_preview_assets(&mut self) -> anyhow::Result<()> {
         let registry = game_data::load_registry(&self.project_root)
             .context("failed to reload content registry")?;
-        let tile_map = build_tile_map_render_data(&self.project_root, &registry, &self.active_map_id)
-            .with_context(|| format!("failed to rebuild render data for map '{}'", self.active_map_id))?;
+        let tile_map =
+            build_tile_map_render_data(&self.project_root, &registry, &self.active_map_id)
+                .with_context(|| {
+                    format!(
+                        "failed to rebuild render data for map '{}'",
+                        self.active_map_id
+                    )
+                })?;
 
         if let Some(renderer) = &mut self.renderer {
             renderer.replace_tile_map(tile_map.clone())?;
         }
 
         self.registry = registry;
-        self.static_prop_sprites = build_static_prop_instances(&self.registry, &self.active_map_id, tile_map.as_ref());
+        self.static_prop_sprites =
+            build_static_prop_instances(&self.registry, &self.active_map_id, tile_map.as_ref());
+        self.voxel_scene = build_voxel_scene_render_data(
+            &self.project_root,
+            &self.active_map_id,
+            tile_map.as_ref(),
+        )
+        .with_context(|| {
+            format!(
+                "failed to rebuild voxel scene render data for map '{}'",
+                self.active_map_id
+            )
+        })?;
         self.tile_map = tile_map;
         self.asset_watch.reset();
 
@@ -1530,7 +1873,10 @@ impl BootstrapApp {
             self.launch_mode.label(),
             self.active_map_id,
             self.registry.summary(),
-            self.tile_map.as_ref().map(|map| map.tiles.len()).unwrap_or(0)
+            self.tile_map
+                .as_ref()
+                .map(|map| map.tiles.len())
+                .unwrap_or(0)
         );
 
         Ok(())
@@ -1558,7 +1904,11 @@ impl BootstrapApp {
                 self.editor_ui.left_dock_open = !self.editor_ui.left_dock_open;
                 self.editor_ui.status_message = format!(
                     "Assets dock {}",
-                    if self.editor_ui.left_dock_open { "opened" } else { "collapsed" }
+                    if self.editor_ui.left_dock_open {
+                        "opened"
+                    } else {
+                        "collapsed"
+                    }
                 );
                 self.sync_editor_ui();
             }
@@ -1566,7 +1916,11 @@ impl BootstrapApp {
                 self.editor_ui.right_dock_open = !self.editor_ui.right_dock_open;
                 self.editor_ui.status_message = format!(
                     "Inspector dock {}",
-                    if self.editor_ui.right_dock_open { "opened" } else { "collapsed" }
+                    if self.editor_ui.right_dock_open {
+                        "opened"
+                    } else {
+                        "collapsed"
+                    }
                 );
                 self.sync_editor_ui();
             }
@@ -1574,15 +1928,22 @@ impl BootstrapApp {
                 self.editor_ui.bottom_dock_open = !self.editor_ui.bottom_dock_open;
                 self.editor_ui.status_message = format!(
                     "Log dock {}",
-                    if self.editor_ui.bottom_dock_open { "opened" } else { "collapsed" }
+                    if self.editor_ui.bottom_dock_open {
+                        "opened"
+                    } else {
+                        "collapsed"
+                    }
                 );
                 self.sync_editor_ui();
             }
             PhysicalKey::Code(KeyCode::F5) => {
                 match self.reload_live_preview_assets() {
-                    Ok(()) => self.editor_ui.status_message = "Manual F5 reload complete.".to_string(),
+                    Ok(()) => {
+                        self.editor_ui.status_message = "Manual F5 reload complete.".to_string()
+                    }
                     Err(error) => {
-                        self.editor_ui.status_message = "Manual F5 reload failed. See logs/latest.log.".to_string();
+                        self.editor_ui.status_message =
+                            "Manual F5 reload failed. See logs/latest.log.".to_string();
                         log::warn!("manual F5 live-preview reload failed: {error:#}");
                     }
                 }
@@ -1604,7 +1965,10 @@ impl BootstrapApp {
 
     fn set_active_editor_tool(&mut self, index: usize) {
         self.editor_ui.active_tool = index.min(9);
-        self.editor_ui.status_message = format!("Active tool: {}", editor_tool_name(self.editor_ui.active_tool));
+        self.editor_ui.status_message = format!(
+            "Active tool: {}",
+            editor_tool_name(self.editor_ui.active_tool)
+        );
         self.editor_ui.hover_hint = editor_tool_hint(self.editor_ui.active_tool).to_string();
         self.sync_editor_ui();
     }
@@ -1612,7 +1976,8 @@ impl BootstrapApp {
     fn select_asset(&mut self, index: usize, label: &str, status: &str) {
         self.editor_ui.selected_asset_index = index;
         self.editor_ui.status_message = status.to_string();
-        self.editor_ui.hover_hint = format!("Selected asset: {label}. Use Tile Picker or Inspector actions.");
+        self.editor_ui.hover_hint =
+            format!("Selected asset: {label}. Use Tile Picker or Inspector actions.");
         self.sync_editor_ui();
     }
 
@@ -1630,18 +1995,17 @@ impl BootstrapApp {
         self.update_selected_tile_metadata();
         self.editor_ui.status_message = format!(
             "{} selected {} at atlas cell {},{}",
-            status_source,
-            self.editor_ui.selected_tile_name,
-            atlas_cell.0,
-            atlas_cell.1
+            status_source, self.editor_ui.selected_tile_name, atlas_cell.0, atlas_cell.1
         );
-        self.editor_ui.hover_hint = "Inspector actions can cycle role/collision and save metadata.".to_string();
+        self.editor_ui.hover_hint =
+            "Inspector actions can cycle role/collision and save metadata.".to_string();
         self.sync_editor_ui();
     }
 
     fn select_next_named_tile(&mut self, step: isize) {
         let Some(tileset) = self.active_tileset() else {
-            self.editor_ui.status_message = "No active tileset available for tile cycling.".to_string();
+            self.editor_ui.status_message =
+                "No active tileset available for tile cycling.".to_string();
             self.sync_editor_ui();
             return;
         };
@@ -1668,9 +2032,7 @@ impl BootstrapApp {
         self.update_selected_tile_metadata();
         self.editor_ui.status_message = format!(
             "Selected next atlas tile: {} at {},{}",
-            self.editor_ui.selected_tile_name,
-            cell.0,
-            cell.1
+            self.editor_ui.selected_tile_name, cell.0, cell.1
         );
         self.sync_editor_ui();
     }
@@ -1689,7 +2051,8 @@ impl BootstrapApp {
             .find(|tile| tile.x == map_x && tile.y == map_y)
             .copied()
         else {
-            self.editor_ui.status_message = format!("No rendered tile at map cell {},{}", map_x, map_y);
+            self.editor_ui.status_message =
+                format!("No rendered tile at map cell {},{}", map_x, map_y);
             self.sync_editor_ui();
             return true;
         };
@@ -1697,11 +2060,7 @@ impl BootstrapApp {
         self.select_tile_by_atlas_cell((tile.atlas_x, tile.atlas_y), "Viewport");
         self.editor_ui.status_message = format!(
             "Viewport tile {},{} -> {} atlas {},{}",
-            map_x,
-            map_y,
-            self.editor_ui.selected_tile_name,
-            tile.atlas_x,
-            tile.atlas_y
+            map_x, map_y, self.editor_ui.selected_tile_name, tile.atlas_x, tile.atlas_y
         );
         self.sync_editor_ui();
         true
@@ -1750,23 +2109,28 @@ impl BootstrapApp {
     }
 
     fn cycle_selected_role(&mut self) {
-        let mut state = load_tile_role_state(&self.project_root, &self.editor_ui.selected_tile_name);
+        let mut state =
+            load_tile_role_state(&self.project_root, &self.editor_ui.selected_tile_name);
         let next_role = next_cycle_value(&state.role, EDITOR_ROLE_CYCLE);
         state = TileRoleState::from_role(&next_role);
         self.editor_ui.selected_role = state.role.clone();
         self.editor_ui.selected_collision = state.collision.clone();
 
-        match save_tile_role_state(&self.project_root, &self.editor_ui.selected_tile_name, &state) {
+        match save_tile_role_state(
+            &self.project_root,
+            &self.editor_ui.selected_tile_name,
+            &state,
+        ) {
             Ok(()) => {
                 self.editor_ui.status_message = format!(
                     "Saved role '{}' for {}.",
-                    state.role,
-                    self.editor_ui.selected_tile_name
+                    state.role, self.editor_ui.selected_tile_name
                 );
                 self.reload_after_metadata_save();
             }
             Err(error) => {
-                self.editor_ui.status_message = "Role save failed. See logs/latest.log.".to_string();
+                self.editor_ui.status_message =
+                    "Role save failed. See logs/latest.log.".to_string();
                 log::warn!("native role metadata save failed: {error:#}");
             }
         }
@@ -1788,17 +2152,21 @@ impl BootstrapApp {
         self.editor_ui.selected_role = state.role.clone();
         self.editor_ui.selected_collision = state.collision.clone();
 
-        match save_tile_role_state(&self.project_root, &self.editor_ui.selected_tile_name, &state) {
+        match save_tile_role_state(
+            &self.project_root,
+            &self.editor_ui.selected_tile_name,
+            &state,
+        ) {
             Ok(()) => {
                 self.editor_ui.status_message = format!(
                     "Saved collision '{}' for {}.",
-                    state.collision,
-                    self.editor_ui.selected_tile_name
+                    state.collision, self.editor_ui.selected_tile_name
                 );
                 self.reload_after_metadata_save();
             }
             Err(error) => {
-                self.editor_ui.status_message = "Collision save failed. See logs/latest.log.".to_string();
+                self.editor_ui.status_message =
+                    "Collision save failed. See logs/latest.log.".to_string();
                 log::warn!("native collision metadata save failed: {error:#}");
             }
         }
@@ -1806,7 +2174,10 @@ impl BootstrapApp {
     }
 
     fn write_asset_studio_selection_manifest(&mut self) {
-        let path = self.project_root.join("artifacts").join("native_asset_studio_selection.ron");
+        let path = self
+            .project_root
+            .join("artifacts")
+            .join("native_asset_studio_selection.ron");
         let body = format!(
             "(\n    selected_asset_index: {},\n    selected_tile: \"{}\",\n    selected_cell: ({}, {}),\n    role: \"{}\",\n    collision: \"{}\",\n    note: \"Phase 31 native Asset Studio selection/export checkpoint\",\n)\n",
             self.editor_ui.selected_asset_index,
@@ -1817,12 +2188,19 @@ impl BootstrapApp {
             self.editor_ui.selected_collision,
         );
 
-        match path.parent().map(fs::create_dir_all).transpose().and_then(|_| fs::write(&path, body)) {
+        match path
+            .parent()
+            .map(fs::create_dir_all)
+            .transpose()
+            .and_then(|_| fs::write(&path, body))
+        {
             Ok(()) => {
-                self.editor_ui.status_message = format!("Wrote native Asset Studio checkpoint: {}", path.display());
+                self.editor_ui.status_message =
+                    format!("Wrote native Asset Studio checkpoint: {}", path.display());
             }
             Err(error) => {
-                self.editor_ui.status_message = "Selection checkpoint write failed. See logs/latest.log.".to_string();
+                self.editor_ui.status_message =
+                    "Selection checkpoint write failed. See logs/latest.log.".to_string();
                 log::warn!("failed to write native asset studio checkpoint: {error:#}");
             }
         }
@@ -1853,33 +2231,50 @@ impl BootstrapApp {
         if let Some(index) = hit_toolbar_tool(ndc) {
             self.editor_ui.hover_hint = editor_tool_hint(index).to_string();
         } else if let Some(index) = hit_left_tab(ndc) {
-            self.editor_ui.hover_hint = format!("Switch left dock tab to {}.", left_tab_name(index));
+            self.editor_ui.hover_hint =
+                format!("Switch left dock tab to {}.", left_tab_name(index));
         } else if let Some(index) = hit_right_tab(ndc) {
-            self.editor_ui.hover_hint = format!("Switch inspector tab to {}.", right_tab_name(index));
+            self.editor_ui.hover_hint =
+                format!("Switch inspector tab to {}.", right_tab_name(index));
         } else if let Some(index) = hit_bottom_tab(ndc) {
-            self.editor_ui.hover_hint = format!("Switch bottom dock tab to {}.", bottom_tab_name(index));
+            self.editor_ui.hover_hint =
+                format!("Switch bottom dock tab to {}.", bottom_tab_name(index));
         } else if hit_right_action_role(ndc) {
-            self.editor_ui.hover_hint = "Role action: click to cycle selected tile role and save sidecar metadata.".to_string();
+            self.editor_ui.hover_hint =
+                "Role action: click to cycle selected tile role and save sidecar metadata."
+                    .to_string();
         } else if hit_right_action_collision(ndc) {
-            self.editor_ui.hover_hint = "Collision action: click to cycle walk/block/water flags and save metadata.".to_string();
+            self.editor_ui.hover_hint =
+                "Collision action: click to cycle walk/block/water flags and save metadata."
+                    .to_string();
         } else if hit_right_action_seam(ndc) {
-            self.editor_ui.hover_hint = "Seam action: focus seam diagnostics for the selected tile.".to_string();
+            self.editor_ui.hover_hint =
+                "Seam action: focus seam diagnostics for the selected tile.".to_string();
         } else if hit_right_action_export(ndc) {
-            self.editor_ui.hover_hint = "Export action: write an Asset Studio checkpoint manifest.".to_string();
+            self.editor_ui.hover_hint =
+                "Export action: write an Asset Studio checkpoint manifest.".to_string();
         } else if hit_left_asset_row(ndc, 0.700) {
-            self.editor_ui.hover_hint = "Terrain Atlas asset: select for tile metadata and atlas workflow.".to_string();
+            self.editor_ui.hover_hint =
+                "Terrain Atlas asset: select for tile metadata and atlas workflow.".to_string();
         } else if hit_left_asset_row(ndc, 0.570) {
-            self.editor_ui.hover_hint = "Player Walk asset: character sprite workflow placeholder.".to_string();
+            self.editor_ui.hover_hint =
+                "Player Walk asset: character sprite workflow placeholder.".to_string();
         } else if hit_left_asset_row(ndc, 0.440) {
-            self.editor_ui.hover_hint = "Ocean Props asset: static prop workflow placeholder.".to_string();
+            self.editor_ui.hover_hint =
+                "Ocean Props asset: static prop workflow placeholder.".to_string();
         } else if hit_rect(ndc, -1.0, -1.0, -0.765, 0.920) {
-            self.editor_ui.hover_hint = "Assets dock: choose project content. F1 collapses it.".to_string();
+            self.editor_ui.hover_hint =
+                "Assets dock: choose project content. F1 collapses it.".to_string();
         } else if hit_rect(ndc, 0.765, -1.0, 1.0, 0.920) {
-            self.editor_ui.hover_hint = "Inspector dock: selected tile, seams, role, collision.".to_string();
+            self.editor_ui.hover_hint =
+                "Inspector dock: selected tile, seams, role, collision.".to_string();
         } else if hit_rect(ndc, -0.765, -1.0, 0.765, -0.835) {
-            self.editor_ui.hover_hint = "Console dock: validation, hot reload, runtime logs.".to_string();
+            self.editor_ui.hover_hint =
+                "Console dock: validation, hot reload, runtime logs.".to_string();
         } else {
-            self.editor_ui.hover_hint = "Viewport: click a rendered tile to inspect its atlas cell and metadata.".to_string();
+            self.editor_ui.hover_hint =
+                "Viewport: click a rendered tile to inspect its atlas cell and metadata."
+                    .to_string();
         }
         self.sync_editor_ui();
     }
@@ -1980,7 +2375,11 @@ impl BootstrapApp {
             self.select_asset(1, "Player Walk", "Selected Player Walk sprite sheet. Character animation editing is a later native panel.");
             return;
         } else if hit_left_asset_row(ndc, 0.440) {
-            self.select_asset(2, "Ocean Props", "Selected Ocean Props sheet. Prop metadata editing is a later native panel.");
+            self.select_asset(
+                2,
+                "Ocean Props",
+                "Selected Ocean Props sheet. Prop metadata editing is a later native panel.",
+            );
             return;
         }
 
@@ -2150,7 +2549,12 @@ impl ApplicationHandler for BootstrapApp {
         match create_gl_window(event_loop, &config) {
             Ok(window_bootstrap) => {
                 self.window_id = Some(window_bootstrap.window.id());
-                match RenderBootstrap::new(window_bootstrap, self.tile_map.clone(), self.player_sprite_data.clone(), self.prop_sprite_data.clone()) {
+                match RenderBootstrap::new(
+                    window_bootstrap,
+                    self.tile_map.clone(),
+                    self.player_sprite_data.clone(),
+                    self.prop_sprite_data.clone(),
+                ) {
                     Ok(mut renderer) => {
                         if self.launch_mode == LaunchMode::Editor {
                             renderer.set_editor_shell_visible(true);
@@ -2229,21 +2633,20 @@ impl ApplicationHandler for BootstrapApp {
                 let stats = self.timer.tick();
                 self.maybe_hot_reload_assets();
 
-                self.game_runtime.update(self.input, stats.delta.as_secs_f32());
+                self.game_runtime
+                    .update(self.input, stats.delta.as_secs_f32());
                 let player_sprites = self.game_runtime.player_sprites();
                 let lighting = self.game_runtime.lighting_state();
 
-                let render_result = self
-                    .renderer
-                    .as_ref()
-                    .map(|renderer| {
-                        renderer.render_frame(
-                            stats.frame_index,
-                            &player_sprites,
-                            &self.static_prop_sprites,
-                            Some(lighting),
-                        )
-                    });
+                let render_result = self.renderer.as_ref().map(|renderer| {
+                    renderer.render_frame(
+                        stats.frame_index,
+                        self.voxel_scene.as_ref(),
+                        &player_sprites,
+                        &self.static_prop_sprites,
+                        Some(lighting),
+                    )
+                });
 
                 if let Some(Err(error)) = render_result {
                     self.set_fatal_error("render failure", format!("{error:#}"));

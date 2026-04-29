@@ -1,0 +1,15 @@
+(
+    id: "phase52_core_contract_manifest",
+    display_name: "Phase 52 Core Contract Manifest",
+    version: 1,
+    biomes_path: "content/biomes/phase52/biome_catalog.ron",
+    materials_path: "content/materials/phase52/material_catalog.ron",
+    liquids_path: "content/liquids/phase52/liquid_catalog.ron",
+    seasons_path: "content/seasons/phase52/season_catalog.ron",
+    weather_path: "content/weather/phase52/weather_catalog.ron",
+    map_layers_path: "content/map_layers/phase52/map_layer_schema.ron",
+    worldgen_presets_path: "content/worldgen/phase52/worldgen_presets.ron",
+    vox_assets_path: "content/voxels/phase52/vox_asset_catalog.ron",
+    editor_help_path: "content/editor_help/phase52/editor_help_catalog.ron",
+    validation_profile_path: "content/contracts/phase52_validation_profile.ron",
+)

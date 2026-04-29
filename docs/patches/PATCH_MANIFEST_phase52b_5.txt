@@ -1,0 +1,11 @@
+Phase 52b.5 — Release Warning Cleanup
+
+Changed files:
+- crates/app/src/egui_editor.rs
+- docs/PHASE52B_5_RELEASE_WARNING_CLEANUP.md
+- PATCH_MANIFEST_phase52b_5.txt
+
+Purpose:
+- Clean warning-only leftovers after the successful release-all app binaries build.
+- Keep native egui Asset Studio as the current editor path.
+- Keep the fixed bottom status bar and transition overlay filter wired to live editor state.

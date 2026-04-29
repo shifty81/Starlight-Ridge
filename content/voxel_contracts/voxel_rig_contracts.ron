@@ -1,0 +1,16 @@
+VoxelRigContracts(
+    version: 1,
+    notes: [
+        "Voxel rigs use modular voxel parts bound to bones.",
+        "Base templates must be bald and clean-shaven.",
+        "Hair, facial hair, clothing, hats, bags, straps, tools, and accessories are modular overlays.",
+    ],
+    required_contracts: [
+        "VoxelRigDef",
+        "VoxelSkeletonDef",
+        "VoxelBoneDef",
+        "VoxelRigPartDef",
+        "VoxelAttachmentPointDef",
+        "VoxelAnimationClipDef",
+    ],
+)

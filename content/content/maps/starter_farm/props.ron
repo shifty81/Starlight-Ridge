@@ -1,0 +1,13 @@
+[
+    (id: "farmhouse", kind: "farmhouse_placeholder", x: 9, y: 10),
+    (id: "shipping_bin", kind: "shipping_bin", x: 16, y: 13),
+    (id: "well", kind: "well", x: 23, y: 12),
+    (id: "north_sign", kind: "sign", x: 17, y: 2),
+
+    // Phase 18 bridge-sheet sprite props.
+    (id: "farm_seagull_01", kind: "seagull", x: 6, y: 5),
+    (id: "farm_weak_tree_01", kind: "weak_tree_full", x: 4, y: 20),
+    (id: "farm_stone_01", kind: "big_stone_large", x: 28, y: 18),
+    (id: "farm_driftwood_01", kind: "driftwood_log", x: 31, y: 22),
+    (id: "farm_shrub_01", kind: "coastal_shrub", x: 11, y: 21),
+]

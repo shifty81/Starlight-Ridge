@@ -120,6 +120,10 @@ pub struct LayerLegendEntry {
 pub struct TileLayerDef {
     pub id: String,
     pub visible: bool,
+    #[serde(default)]
+    pub locked: bool,
+    #[serde(default = "default_layer_opacity")]
+    pub opacity: f32,
     pub legend: Vec<LayerLegendEntry>,
     pub rows: Vec<String>,
 }
@@ -139,7 +143,6 @@ pub struct MapBundle {
     pub spawns: Vec<SpawnPoint>,
     pub triggers: Vec<TriggerZone>,
 }
-
 
 // -----------------------------------------------------------------------------
 // Phase 17 terrain contract definitions
@@ -237,7 +240,6 @@ pub struct TerrainPcgRulesDef {
     pub protect_prefab_cells: bool,
 }
 
-
 // -----------------------------------------------------------------------------
 // Phase 19 editor/web atlas pipeline definitions
 // -----------------------------------------------------------------------------
@@ -333,7 +335,6 @@ pub struct GamePreviewProfileDef {
     pub show_transitions: bool,
     pub day_time_minutes: u32,
 }
-
 
 // -----------------------------------------------------------------------------
 // Phase 20 editor export, validation, and autotile pipeline definitions
@@ -472,7 +473,6 @@ pub struct AtlasCleanupActionDef {
     pub target_category: String,
     pub reason: String,
 }
-
 
 // -----------------------------------------------------------------------------
 // Phase 21 animation editor timeline, events, sockets, and hitbox definitions
@@ -617,146 +617,286 @@ pub struct AnimationValidationReportDef {
 }
 
 // -----------------------------------------------------------------------------
-// -----------------------------------------------------------------------------
-// Phase 51i hybrid 2D/3D world, presentation, and render pipeline definitions
+// Phase 53f/53g/53h/53i voxel-pixel panel designer definitions
 // -----------------------------------------------------------------------------
 //
-// These definitions keep Starlight Ridge authored as a readable gameplay grid
-// while allowing the same scene to carry height/elevation, 3D object placement,
-// presentation camera profiles, and render/bake metadata. The current runtime can
-// continue using the 2D tile layers while the editor grows 2.5D/3D preview and
-// baking workflows around the same map id.
+// These contracts are editor-first source data for modular pixel-voxel panels.
+// They are intentionally lightweight RON structs so GUI panels, building wall
+// panels, props, panel composition, and later 3D voxel previews can share the same source format.
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum SceneRenderModeDef {
-    Tile2D,
-    Hybrid2_5D,
-    Scene3D,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelPanelKitDef {
+    pub id: String,
+    pub display_name: String,
+    pub description: String,
+    pub default_palette_id: String,
+    #[serde(default)]
+    pub composition: VoxelPanelKitCompositionDef,
+    #[serde(default)]
+    pub preview_3d: VoxelPanelPreview3dDef,
+    pub palettes: Vec<VoxelPanelPaletteDef>,
+    pub panels: Vec<VoxelPanelDef>,
+    #[serde(default)]
+    pub compositions: Vec<VoxelPanelCompositionSceneDef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct VoxelPanelKitCompositionDef {
+    pub target_view: String,
+    pub snap_unit_px: u32,
+    pub allowed_panel_kinds: Vec<String>,
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HeightMapDef {
-    pub map_id: String,
+pub struct VoxelPanelPreview3dDef {
+    pub voxel_unit: f32,
+    pub layer_gap: f32,
+    pub default_camera: String,
+    pub show_socket_gizmos: bool,
+    pub show_depth_separation: bool,
+}
+
+impl Default for VoxelPanelPreview3dDef {
+    fn default() -> Self {
+        Self {
+            voxel_unit: 1.0,
+            layer_gap: 0.0,
+            default_camera: "isometric_front".to_string(),
+            show_socket_gizmos: true,
+            show_depth_separation: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelPanelPaletteDef {
+    pub id: String,
+    pub display_name: String,
+    pub materials: Vec<VoxelPanelMaterialDef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelPanelMaterialDef {
+    pub id: String,
+    pub display_name: String,
+    pub rgba: [u8; 4],
+    pub render_hint: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelPanelDef {
+    pub id: String,
+    pub display_name: String,
+    pub panel_kind: String,
     pub width: u32,
     pub height: u32,
-    pub cell_size: f32,
-    pub default_height: i16,
-    pub min_height: i16,
-    pub max_height: i16,
-    pub values: Vec<i16>,
-    pub notes: Vec<String>,
+    pub depth: u32,
+    #[serde(default)]
+    pub composition: VoxelPanelCompositionDef,
+    pub cells: Vec<VoxelPanelCellDef>,
+    pub sockets: Vec<VoxelPanelSocketDef>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Scene3DDef {
-    pub map_id: String,
-    pub coordinate_space: String,
-    pub units_per_tile: f32,
-    pub objects: Vec<SceneObject3DDef>,
-    pub notes: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SceneObject3DDef {
-    pub id: String,
-    pub asset_id: String,
-    pub source_kind: SceneAssetSourceKindDef,
-    pub visual_mode: SceneObjectVisualModeDef,
-    pub cell_x: u32,
-    pub cell_y: u32,
-    pub offset_x: f32,
-    pub offset_y: f32,
-    pub offset_z: f32,
-    pub rotation_degrees: f32,
-    pub scale: f32,
-    pub collision_cells: Vec<GridCellDef>,
+pub struct VoxelPanelCompositionDef {
+    pub group_id: String,
+    pub anchor: String,
+    pub snap_priority: i32,
+    pub allow_rotation: bool,
+    pub allow_mirror_x: bool,
+    pub allow_mirror_y: bool,
     pub tags: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum SceneAssetSourceKindDef {
-    Sprite2D,
-    Vox,
-    Blockbench,
-    Blender,
-    Gltf,
-    GeneratedBake,
-    Placeholder,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum SceneObjectVisualModeDef {
-    SpriteBillboard,
-    BakedSprite,
-    Live3D,
-    HybridProxy,
+impl Default for VoxelPanelCompositionDef {
+    fn default() -> Self {
+        Self {
+            group_id: "default".to_string(),
+            anchor: "center".to_string(),
+            snap_priority: 0,
+            allow_rotation: true,
+            allow_mirror_x: true,
+            allow_mirror_y: true,
+            tags: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GridCellDef {
+pub struct VoxelPanelCompositionSceneDef {
+    pub id: String,
+    pub display_name: String,
+    pub canvas_width: u32,
+    pub canvas_height: u32,
+    pub canvas_depth: u32,
+    pub grid_unit_px: u32,
+    #[serde(default)]
+    pub viewport_prep: VoxelPanelCompositionViewportPrepDef,
+    pub instances: Vec<VoxelPanelCompositionInstanceDef>,
+    pub connections: Vec<VoxelPanelCompositionConnectionDef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelPanelCompositionViewportPrepDef {
+    pub source_axis: String,
+    pub bake_anchor: String,
+    pub show_bounds: bool,
+    pub show_socket_lines: bool,
+    #[serde(default = "default_voxel_panel_mesh_export_path")]
+    pub mesh_export_path: String,
+    #[serde(default)]
+    pub bake_layer_gap: f32,
+    #[serde(default)]
+    pub include_empty_bounds: bool,
+    #[serde(default = "default_true")]
+    pub emit_socket_gizmos: bool,
+}
+
+impl Default for VoxelPanelCompositionViewportPrepDef {
+    fn default() -> Self {
+        Self {
+            source_axis: "xy_depth_z".to_string(),
+            bake_anchor: "origin".to_string(),
+            show_bounds: true,
+            show_socket_lines: true,
+            mesh_export_path: default_voxel_panel_mesh_export_path(),
+            bake_layer_gap: 0.0,
+            include_empty_bounds: false,
+            emit_socket_gizmos: true,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_layer_opacity() -> f32 {
+    1.0
+}
+
+fn default_voxel_panel_mesh_export_path() -> String {
+    "content/editor_voxel_panels/preview_exports".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelPanelCompositionMeshExportDef {
+    pub id: String,
+    pub display_name: String,
+    pub source_kit_id: String,
+    pub source_composition_id: String,
+    pub generated_by_phase: String,
+    pub generated_at_unix: u64,
+    pub voxel_unit: f32,
+    pub layer_gap: f32,
+    pub source_axis: String,
+    pub bake_anchor: String,
+    pub bounds_min: [i32; 3],
+    pub bounds_max: [i32; 3],
+    pub voxel_count: usize,
+    pub instance_count: usize,
+    pub socket_gizmo_count: usize,
+    pub connection_gizmo_count: usize,
+    pub instances: Vec<VoxelPanelBakedInstanceDef>,
+    pub voxels: Vec<VoxelPanelBakedVoxelDef>,
+    pub socket_gizmos: Vec<VoxelPanelSocketGizmoDef>,
+    pub connection_gizmos: Vec<VoxelPanelConnectionGizmoDef>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelPanelBakedInstanceDef {
+    pub instance_id: String,
+    pub panel_id: String,
+    pub transform_origin: [i32; 3],
+    pub rotation_degrees: i32,
+    pub mirror_x: bool,
+    pub mirror_y: bool,
+    pub bounds_min: [i32; 3],
+    pub bounds_max: [i32; 3],
+    pub voxel_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelPanelBakedVoxelDef {
+    pub instance_id: String,
+    pub panel_id: String,
+    pub material_id: String,
+    pub local: [i32; 3],
+    pub world: [i32; 3],
+    pub rgba: [u8; 4],
+    pub render_hint: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelPanelSocketGizmoDef {
+    pub instance_id: String,
+    pub panel_id: String,
+    pub socket_id: String,
+    pub edge: String,
+    pub world: [i32; 3],
+    pub accepts: Vec<String>,
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelPanelConnectionGizmoDef {
+    pub connection_id: String,
+    pub from_instance: String,
+    pub from_socket: String,
+    pub to_instance: String,
+    pub to_socket: String,
+    pub from_world: [i32; 3],
+    pub to_world: [i32; 3],
+    pub snapped: bool,
+    pub offset: [i32; 3],
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelPanelCompositionInstanceDef {
+    pub id: String,
+    pub panel_id: String,
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub rotation_degrees: i32,
+    pub mirror_x: bool,
+    pub mirror_y: bool,
+    pub locked: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelPanelCompositionConnectionDef {
+    pub id: String,
+    pub from_instance: String,
+    pub from_socket: String,
+    pub to_instance: String,
+    pub to_socket: String,
+    pub snapped: bool,
+    pub offset: [i32; 3],
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelPanelCellDef {
     pub x: u32,
     pub y: u32,
+    pub z: u32,
+    pub material_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PresentationDef {
-    pub map_id: String,
-    pub default_mode: SceneRenderModeDef,
-    pub depth_sorting: bool,
-    pub sprite_billboarding: bool,
-    pub pixel_snap: bool,
-    pub active_camera_profile: String,
-    pub camera_profiles: Vec<CameraProfileDef>,
-    pub notes: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CameraProfileDef {
+pub struct VoxelPanelSocketDef {
     pub id: String,
-    pub display_name: String,
-    pub mode: SceneRenderModeDef,
-    pub pitch_degrees: f32,
-    pub yaw_degrees: f32,
-    pub orthographic_scale: f32,
-    pub perspective_fov_degrees: f32,
-    pub near_clip: f32,
-    pub far_clip: f32,
-    pub pixel_snap: bool,
+    pub edge: String,
+    pub x: u32,
+    pub y: u32,
+    pub z: u32,
+    pub accepts: Vec<String>,
+    pub required: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LightingProfileDef {
-    pub map_id: String,
-    pub active_profile: String,
-    pub profiles: Vec<LightingProfileEntryDef>,
-    pub notes: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LightingProfileEntryDef {
-    pub id: String,
-    pub display_name: String,
-    pub time_of_day: String,
-    pub ambient_strength: f32,
-    pub sun_yaw_degrees: f32,
-    pub sun_pitch_degrees: f32,
-    pub shadow_strength: f32,
-    pub weather_modifier: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HybridWorldEditorPipelineDef {
-    pub id: String,
-    pub display_name: String,
-    pub default_render_mode: SceneRenderModeDef,
-    pub world_subtabs: Vec<String>,
-    pub asset_subtabs: Vec<String>,
-    pub render_subtabs: Vec<String>,
-    pub external_tool_targets: Vec<String>,
-    pub automation_goals: Vec<String>,
-    pub notes: Vec<String>,
-}
-
+// -----------------------------------------------------------------------------
 // Phase 51 world graph / scene-layer registry definitions
 // -----------------------------------------------------------------------------
 

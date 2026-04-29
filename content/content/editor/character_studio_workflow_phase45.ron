@@ -1,0 +1,26 @@
+(
+    id: "character_studio_workflow_phase45",
+    display_name: "Phase 45 Character Studio Workflow",
+    workspace: "Character",
+    tabs: [
+        "Mannequin",
+        "Paperdoll Layers",
+        "Equipment / Overlays",
+        "Animation Preview",
+        "Scale Validator",
+        "Export / Metadata",
+    ],
+    source_files: [
+        "content/editor_character/character_studio_phase45_assets.ron",
+        "content/editor_character/paperdoll_offsets_phase45.ron",
+        "content/editor_character/frame_anchors_phase45.ron",
+        "content/editor_character/tool_sockets_phase45.ron",
+    ],
+    authoring_rules: [
+        "Use bottom-center foot anchors.",
+        "Keep collision boxes separate from visual sprite height.",
+        "Use the same frame dimensions for base and overlay sheets.",
+        "Do not scale adult art down for children; author scale classes intentionally.",
+        "Validate tool sockets before binding tool logic graphs.",
+    ],
+)

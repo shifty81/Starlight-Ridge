@@ -1,0 +1,25 @@
+Starlight Ridge Phase 52c — Biome Rule Packs + Seasonal WorldGen Resolver
+
+Files changed/added:
+- crates/game_data/src/defs.rs
+- crates/game_data/src/loader.rs
+- crates/game_data/src/registry.rs
+- crates/game_data/src/lib.rs
+- crates/game_data/src/validate.rs
+- crates/game_worldgen/Cargo.toml
+- crates/game_worldgen/src/lib.rs
+- crates/game_worldgen/src/seasonal_resolver.rs
+- crates/app/Cargo.toml
+- crates/app/src/egui_editor.rs
+- content/worldgen/biome_rule_packs/coastal_peninsula_v1.ron
+- docs/PHASE52C_BIOME_RULE_PACKS_SEASONAL_RESOLVER.md
+- PATCH_MANIFEST_phase52c.txt
+
+Expected result:
+- cargo check should continue past the previous Phase 52b.5 clean release source.
+- Content registry loads one Phase 52c worldgen biome rule pack.
+- World > Terrain Rules shows a real seasonal resolver panel.
+- Semantic terrain can be resolved to season-aware concrete tile IDs for spring/summer/fall/winter.
+
+Next recommended phase:
+- Phase 52d — Seasonal Tile Atlas Expansion + Terrain Family Preview.

@@ -1,0 +1,16 @@
+Starlight Ridge — Phase 52b.2 egui Single Root Shell Hotfix
+
+Purpose:
+- Fix nested editor rendering where the full egui editor shell appeared inside itself.
+
+Primary change:
+- crates/app/src/egui_editor.rs
+
+Docs added:
+- docs/PHASE52B_2_EGUI_SINGLE_ROOT_SHELL_FIX.md
+
+Implementation notes:
+- Native egui editor now uses eframe::App::ui as the single root entry path.
+- Root panels are rendered with show_inside(root_ui, ...).
+- Deprecated egui panel sizing calls were updated to the current eframe/egui 0.34 compatible API.
+- Old update(ctx, ...) style shell path is not present.

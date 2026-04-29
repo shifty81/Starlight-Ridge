@@ -1,0 +1,6 @@
+(
+    id: "turnip_seed",
+    display_name: "Turnip Seeds",
+    max_stack: 99,
+    sell_price: 12,
+)

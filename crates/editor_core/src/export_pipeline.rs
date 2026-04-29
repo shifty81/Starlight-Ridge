@@ -68,9 +68,14 @@ impl EditorExportPipelineReport {
 pub fn log_editor_export_pipeline_report(registry: &ContentRegistry) {
     let report = EditorExportPipelineReport::from_registry(registry);
     if report.pipelines == 0 {
-        log::warn!("phase20 editor export/validation pipeline is not loaded; export validation stays scaffold-only");
+        log::warn!(
+            "phase20 editor export/validation pipeline is not loaded; export validation stays scaffold-only"
+        );
         return;
     }
 
-    log::info!("phase20 editor export/validation pipeline ready: {}", report.summary());
+    log::info!(
+        "phase20 editor export/validation pipeline ready: {}",
+        report.summary()
+    );
 }

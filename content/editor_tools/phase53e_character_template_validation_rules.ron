@@ -1,0 +1,39 @@
+CharacterTemplateValidationRules(
+    rules: [
+        ValidationRule(
+            id: "character_template.no_hair",
+            severity: Error,
+            message: "Base character templates must not contain hair. Hair is a modular overlay.",
+        ),
+        ValidationRule(
+            id: "character_template.no_facial_hair",
+            severity: Error,
+            message: "Base character templates must not contain facial hair. Facial hair is a modular overlay.",
+        ),
+        ValidationRule(
+            id: "character_template.clean_shaven_flag",
+            severity: Error,
+            message: "Base character template profile must include clean_shaven.",
+        ),
+        ValidationRule(
+            id: "character_template.bald_flag",
+            severity: Error,
+            message: "Base character template profile must include bald.",
+        ),
+        ValidationRule(
+            id: "character_template.required_anchors",
+            severity: Warning,
+            message: "Character template is missing one or more required rig/attachment anchors.",
+        ),
+        ValidationRule(
+            id: "character_template.dimension_mismatch",
+            severity: Warning,
+            message: "Character template dimensions do not match the configured profile.",
+        ),
+        ValidationRule(
+            id: "character_template.voxel_count_budget",
+            severity: Warning,
+            message: "Character template voxel count is outside the configured authoring budget.",
+        ),
+    ],
+)

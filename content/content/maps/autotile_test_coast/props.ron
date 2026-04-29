@@ -1,0 +1,10 @@
+[
+    // Phase 18 static sprite props. These render from assets/textures/oceans_heart_bridge_phase17.png.
+    (id: "coast_seagull_01", kind: "seagull", x: 8, y: 6),
+    (id: "coast_seagull_02", kind: "seagull_glide", x: 14, y: 5),
+    (id: "coast_weak_tree_01", kind: "weak_tree_full", x: 6, y: 16),
+    (id: "coast_stone_01", kind: "big_stone_large", x: 21, y: 17),
+    (id: "coast_driftwood_01", kind: "driftwood_log", x: 29, y: 21),
+    (id: "coast_shrub_01", kind: "coastal_shrub", x: 12, y: 18),
+    (id: "coast_puff_01", kind: "steam_puff_small", x: 33, y: 15),
+]

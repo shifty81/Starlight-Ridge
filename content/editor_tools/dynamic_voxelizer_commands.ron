@@ -1,0 +1,56 @@
+CommandRegistry(
+    commands: [
+        CommandDef(
+            id: "voxelizer.offline.placeholder",
+            label: "Voxelizer / Offline Placeholder Bake",
+            shell: "python",
+            args: [
+                "tools/scripts/voxel/dynamic_voxelizer_offline_placeholder.py",
+                "--profile",
+                "offline_character_reference_high_density",
+            ],
+            working_dir: ".",
+            output_panel: "Pipeline",
+            tags: ["voxelizer", "offline", "phase53d"],
+        ),
+
+        CommandDef(
+            id: "voxelizer.open.blender.source",
+            label: "Voxelizer / Open Source in Blender",
+            shell: "external_tool",
+            args: [
+                "blender",
+                "{selected_source_path}",
+            ],
+            working_dir: ".",
+            output_panel: "Pipeline",
+            tags: ["voxelizer", "blender", "external_tool"],
+        ),
+
+        CommandDef(
+            id: "voxelizer.open.magicavoxel.output",
+            label: "Voxelizer / Open Output in MagicaVoxel",
+            shell: "external_tool",
+            args: [
+                "magica_voxel",
+                "{selected_output_path}",
+            ],
+            working_dir: ".",
+            output_panel: "Pipeline",
+            tags: ["voxelizer", "magicavoxel", "external_tool"],
+        ),
+
+        CommandDef(
+            id: "voxelizer.open.blockbench.rig",
+            label: "Voxelizer / Open Rig in Blockbench",
+            shell: "external_tool",
+            args: [
+                "blockbench",
+                "{selected_rig_path}",
+            ],
+            working_dir: ".",
+            output_panel: "Pipeline",
+            tags: ["voxelizer", "blockbench", "external_tool"],
+        ),
+    ],
+)

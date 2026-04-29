@@ -1,0 +1,30 @@
+VoxelValidationRules(
+    phase: "phase53_pixel_voxel_first_master_spec",
+    hard_errors: [
+        "duplicate_voxel_asset_id",
+        "registered_voxel_asset_missing_source_file",
+        "invalid_voxel_asset_category",
+        "invalid_density_profile",
+        "invalid_voxels_per_tile_zero",
+    ],
+    warnings: [
+        "character_base_has_hair_or_facial_hair_tag",
+        "character_or_npc_under_hero_detail_density",
+        "tool_under_hero_detail_density",
+        "missing_bake_profile",
+        "missing_source_reference_for_base_template",
+        "unsupported_vox_chunk",
+    ],
+    character_rules: CharacterVoxelRules(
+        require_bald_clean_base_templates: true,
+        default_density_profile: HeroDetail,
+        default_voxels_per_tile: 64,
+        recommended_max_voxel_budget: 65536,
+        forbid_base_template_tags: ["hair", "beard", "mustache", "facial_hair"],
+    ),
+    tool_rules: ToolVoxelRules(
+        default_density_profile: HeroDetail,
+        default_voxels_per_tile: 64,
+        recommended_max_voxel_budget: 32768,
+    ),
+)

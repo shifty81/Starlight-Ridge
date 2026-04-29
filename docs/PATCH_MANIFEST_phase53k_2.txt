@@ -1,0 +1,14 @@
+Phase 53k.2 — Voxel Panel Workbench Layout Fix
+
+Files changed:
+- crates/app/src/egui_editor.rs
+- docs/PHASE53K_2_VOXEL_PANEL_WORKBENCH_LAYOUT.md
+- content/editor_voxel_panels/phase53k_2_manifest.ron
+
+Summary:
+- Added internal Voxel Panels workbench modes.
+- Removed the cramped one-screen three-column layout.
+- Split panel editing, composition, 3D preview, and diagnostics into focused views.
+- Preserved Phase 53k read-only preview behavior.
+- Preserved single-root egui shell.
+- No gameplay changes.

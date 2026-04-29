@@ -1,0 +1,114 @@
+DynamicVoxelizerProfileRegistry(
+    profiles: [
+        DynamicVoxelizerProfile(
+            id: "offline_character_reference_high_density",
+            display_name: "Offline Character Reference — High Density",
+            mode: OfflineBake,
+            source_kind: Glb,
+            output_kind: MagicaVoxelVox,
+            grid: VoxelizerGridDef(
+                resolution: [64, 40, 112],
+                voxel_size_world: 0.03125,
+                origin_mode: FeetCenter,
+                max_voxels: 286720,
+            ),
+            sampling: VoxelSamplingDef(
+                surface_sample_mode: TriangleSurface,
+                fill_mode: ShellOnly,
+                normal_mode: FaceNormal,
+                color_mode: MaterialBaseColor,
+                alpha_cutoff: 0.5,
+                shell_thickness_voxels: 1,
+            ),
+            palette: VoxelPaletteQuantizationDef(
+                palette_id: "starlight_character_default",
+                max_colors: 32,
+                dither: false,
+                material_priority: ["skin", "template_shadow", "template_marker"],
+            ),
+            material_mapping: PaletteNearest,
+            bake_cache: Some(VoxelBakeCacheDef(
+                cache_dir: "content/generated/voxel_bake_cache/characters",
+                write_debug_report: true,
+            )),
+            performance_budget: VoxelizerPerformanceBudget(
+                editor_warning_voxels: 200000,
+                editor_hard_max_voxels: 300000,
+                runtime_allowed: false,
+            ),
+        ),
+
+        DynamicVoxelizerProfile(
+            id: "offline_tool_high_density",
+            display_name: "Offline Tool — High Density",
+            mode: OfflineBake,
+            source_kind: StaticMesh,
+            output_kind: MagicaVoxelVox,
+            grid: VoxelizerGridDef(
+                resolution: [96, 32, 32],
+                voxel_size_world: 0.025,
+                origin_mode: GripPoint,
+                max_voxels: 98304,
+            ),
+            sampling: VoxelSamplingDef(
+                surface_sample_mode: TriangleSurface,
+                fill_mode: SolidFill,
+                normal_mode: FaceNormal,
+                color_mode: MaterialBaseColor,
+                alpha_cutoff: 0.5,
+                shell_thickness_voxels: 1,
+            ),
+            palette: VoxelPaletteQuantizationDef(
+                palette_id: "starlight_tools_default",
+                max_colors: 24,
+                dither: false,
+                material_priority: ["wood", "metal", "edge", "grip"],
+            ),
+            material_mapping: PaletteNearest,
+            bake_cache: Some(VoxelBakeCacheDef(
+                cache_dir: "content/generated/voxel_bake_cache/tools",
+                write_debug_report: true,
+            )),
+            performance_budget: VoxelizerPerformanceBudget(
+                editor_warning_voxels: 75000,
+                editor_hard_max_voxels: 100000,
+                runtime_allowed: false,
+            ),
+        ),
+
+        DynamicVoxelizerProfile(
+            id: "runtime_voxel_impact_small",
+            display_name: "Runtime Voxel Impact — Small",
+            mode: RuntimeVfx,
+            source_kind: ProceduralPrimitive,
+            output_kind: RuntimeVoxelParticles,
+            grid: VoxelizerGridDef(
+                resolution: [16, 16, 16],
+                voxel_size_world: 0.05,
+                origin_mode: Center,
+                max_voxels: 4096,
+            ),
+            sampling: VoxelSamplingDef(
+                surface_sample_mode: VertexCloud,
+                fill_mode: SurfaceOnly,
+                normal_mode: None,
+                color_mode: MaterialBaseColor,
+                alpha_cutoff: 0.5,
+                shell_thickness_voxels: 1,
+            ),
+            palette: VoxelPaletteQuantizationDef(
+                palette_id: "starlight_vfx_default",
+                max_colors: 16,
+                dither: false,
+                material_priority: ["impact", "debris", "spark"],
+            ),
+            material_mapping: PaletteNearest,
+            bake_cache: None,
+            performance_budget: VoxelizerPerformanceBudget(
+                editor_warning_voxels: 2048,
+                editor_hard_max_voxels: 4096,
+                runtime_allowed: true,
+            ),
+        ),
+    ],
+)

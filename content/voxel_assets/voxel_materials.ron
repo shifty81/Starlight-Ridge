@@ -1,0 +1,10 @@
+VoxelMaterialRegistry(
+    phase: "phase53_pixel_voxel_first_master_spec",
+    materials: [
+        VoxelMaterialDef(id: "skin_light", display_name: "Base Skin Light", tags: ["character", "skin", "base_template"], solid: true, destructible: false, tool_tags: [], footstep_sound: None, impact_sound: Some("soft_hit"), particle: None, seasonal_variants: []),
+        VoxelMaterialDef(id: "skin_mid", display_name: "Base Skin Mid", tags: ["character", "skin", "base_template"], solid: true, destructible: false, tool_tags: [], footstep_sound: None, impact_sound: Some("soft_hit"), particle: None, seasonal_variants: []),
+        VoxelMaterialDef(id: "template_marker_blue", display_name: "Template Joint Marker", tags: ["editor", "marker", "attachment"], solid: false, destructible: false, tool_tags: [], footstep_sound: None, impact_sound: None, particle: None, seasonal_variants: []),
+        VoxelMaterialDef(id: "tool_wood", display_name: "Tool Wood", tags: ["tool", "wood"], solid: true, destructible: true, tool_tags: ["axe"], footstep_sound: None, impact_sound: Some("wood_hit"), particle: Some("wood_chip"), seasonal_variants: []),
+        VoxelMaterialDef(id: "tool_metal", display_name: "Tool Metal", tags: ["tool", "metal"], solid: true, destructible: true, tool_tags: ["hammer"], footstep_sound: None, impact_sound: Some("metal_hit"), particle: Some("spark"), seasonal_variants: []),
+    ],
+)

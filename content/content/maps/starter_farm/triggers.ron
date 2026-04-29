@@ -1,0 +1,4 @@
+[
+    (id: "to_town", kind: "map_transition", target_map: "town", x: 17, y: 1, w: 3, h: 1),
+    (id: "east_pier", kind: "inspection", target_map: "starter_farm", x: 33, y: 8, w: 2, h: 1),
+]

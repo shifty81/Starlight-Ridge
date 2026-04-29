@@ -1,0 +1,17 @@
+(
+    phase: "53k",
+    title: "Voxel Preview Viewport Polish + Validation",
+    focus: [
+        "Read-only 3D viewport polish",
+        "Projected floor grid",
+        "XYZ axis gizmo",
+        "Material-aware voxel inspection",
+        "Hover labels",
+        "Selected instance and socket highlights",
+        "Preview export history",
+        "Preview diagnostics",
+        "No gameplay changes",
+        "Single-root egui shell preservation",
+    ],
+    next: "Phase 53l — Voxel Composition 3D Selection + Transform Handles",
+)
