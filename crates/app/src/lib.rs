@@ -5,6 +5,7 @@ use std::process::Command;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
+use engine_assets::vox::load_vox_file;
 use engine_assets::AssetRoot;
 use engine_audio::AudioBootstrap;
 use engine_debug::DebugOverlayState;
@@ -1042,8 +1043,31 @@ fn build_voxel_scene_render_data(
         bounds_min = bounds_min.min(min);
         bounds_max = bounds_max.max(max);
 
-        let base_color = color_for_voxel_object(object);
-        push_voxel_prism_mesh(&mut vertices, &mut indices, min, max, base_color);
+        // Try loading the actual .vox source file for real voxel geometry.
+        let vox_path = if object.source_path.is_empty() {
+            None
+        } else {
+            Some(project_root.join(&object.source_path))
+        };
+        let used_real_mesh = vox_path
+            .as_deref()
+            .filter(|p| p.exists())
+            .and_then(|p| load_vox_file(p).ok())
+            .map(|model| {
+                push_vox_model_mesh(
+                    &mut vertices,
+                    &mut indices,
+                    &model,
+                    min,
+                    max,
+                );
+            })
+            .is_some();
+
+        if !used_real_mesh {
+            let base_color = color_for_voxel_object(object);
+            push_voxel_prism_mesh(&mut vertices, &mut indices, min, max, base_color);
+        }
     }
 
     if vertices.is_empty() || indices.is_empty() {
@@ -1162,6 +1186,54 @@ fn shade_color(color: [f32; 4], multiplier: f32) -> [f32; 4] {
         (color[2] * multiplier).clamp(0.0, 1.0),
         color[3],
     ]
+}
+
+/// Convert a loaded .vox model into cube mesh geometry placed inside the given world bounds.
+///
+/// Each voxel in the model maps to one small axis-aligned cube. The model grid is scaled
+/// to fill the world bounding box `[min, max]` so the object occupies its expected footprint
+/// and height in the scene.
+fn push_vox_model_mesh(
+    vertices: &mut Vec<VoxelVertex>,
+    indices: &mut Vec<u32>,
+    model: &engine_assets::vox::VoxModel,
+    world_min: glam::Vec3,
+    world_max: glam::Vec3,
+) {
+    if model.voxels.is_empty() {
+        return;
+    }
+
+    let vw = model.width.max(1) as f32;
+    let vh = model.height.max(1) as f32;
+    let vd = model.depth.max(1) as f32;
+    let world_size = world_max - world_min;
+    let scale = glam::Vec3::new(
+        world_size.x / vw,
+        world_size.y / vh,
+        world_size.z / vd,
+    );
+
+    for voxel in &model.voxels {
+        let color_index = voxel.color_index.saturating_sub(1) as usize;
+        let palette_color = model
+            .palette
+            .get(color_index)
+            .copied()
+            .unwrap_or(engine_assets::vox::VoxColor { r: 180, g: 60, b: 200, a: 255 });
+        if palette_color.a == 0 {
+            continue;
+        }
+        let r = palette_color.r as f32 / 255.0;
+        let g = palette_color.g as f32 / 255.0;
+        let b = palette_color.b as f32 / 255.0;
+        let base_color = [r, g, b, 1.0];
+
+        let vmin = world_min
+            + glam::Vec3::new(voxel.x as f32, voxel.y as f32, voxel.z as f32) * scale;
+        let vmax = vmin + scale;
+        push_voxel_prism_mesh(vertices, indices, vmin, vmax, base_color);
+    }
 }
 
 fn build_terrain_resolve_catalog(
