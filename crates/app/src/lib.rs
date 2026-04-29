@@ -1215,7 +1215,7 @@ fn push_vox_model_mesh(
     );
 
     for voxel in &model.voxels {
-        let color_index = voxel.color_index.saturating_sub(1) as usize;
+        let color_index = voxel.color_index as usize;
         let palette_color = model
             .palette
             .get(color_index)

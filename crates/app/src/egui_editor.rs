@@ -11730,7 +11730,7 @@ fn draw_vox_isometric_preview(
     });
 
     for voxel in sorted {
-        let color_index = voxel.color_index.saturating_sub(1) as usize;
+        let color_index = voxel.color_index as usize;
         let color = model.palette.get(color_index).copied().unwrap_or(
             engine_assets::vox::VoxColor { r: 180, g: 60, b: 200, a: 255 },
         );
