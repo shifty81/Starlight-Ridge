@@ -2,6 +2,7 @@ pub mod defs;
 pub mod loader;
 pub mod registry;
 pub mod validate;
+pub mod vox_rig;
 
 use crate::defs::MapBundle;
 use crate::loader::*;

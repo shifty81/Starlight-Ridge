@@ -241,6 +241,170 @@ fn voxel_bounds_corners(bounds_min: [f32; 3], bounds_max: [f32; 3]) -> [[f32; 3]
     ]
 }
 
+/// Build a [`VoxelSceneRenderData`] from a baked composition mesh export.
+///
+/// Each baked voxel is turned into a small cube mesh positioned using its integer
+/// `world` coordinates scaled by `voxel_unit` (X/Y) and `voxel_unit + layer_gap` (Z).
+/// Visible faces (those bordering an empty neighbor) are emitted with directional
+/// shading multipliers that match the rest of the voxel rendering pipeline.
+/// All voxels are grouped into a single object range keyed by the export's `id`.
+pub fn baked_composition_to_scene_render_data(
+    export: &game_data::defs::VoxelPanelCompositionMeshExportDef,
+) -> Option<VoxelSceneRenderData> {
+    if export.voxels.is_empty() {
+        return None;
+    }
+
+    let unit = export.voxel_unit.max(0.01);
+    let layer_step = unit + export.layer_gap.max(0.0);
+
+    // Build a set of occupied voxel world positions for face culling.
+    let occupied: std::collections::HashSet<[i32; 3]> =
+        export.voxels.iter().map(|v| v.world).collect();
+
+    // Face normals, corner offsets within a unit cube, and shading multipliers.
+    // (delta, corner offsets in unit-cube space, shade multiplier)
+    let face_directions: [([i32; 3], [[f32; 3]; 4], f32); 6] = [
+        (
+            [0, 0, -1],
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ],
+            0.64,
+        ),
+        (
+            [0, 0, 1],
+            [
+                [0.0, 0.0, 1.0],
+                [0.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0],
+                [1.0, 0.0, 1.0],
+            ],
+            1.08,
+        ),
+        (
+            [0, -1, 0],
+            [
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0],
+            ],
+            0.82,
+        ),
+        (
+            [1, 0, 0],
+            [
+                [1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0],
+                [1.0, 1.0, 1.0],
+                [1.0, 1.0, 0.0],
+            ],
+            0.92,
+        ),
+        (
+            [0, 1, 0],
+            [
+                [1.0, 1.0, 0.0],
+                [1.0, 1.0, 1.0],
+                [0.0, 1.0, 1.0],
+                [0.0, 1.0, 0.0],
+            ],
+            0.76,
+        ),
+        (
+            [-1, 0, 0],
+            [
+                [0.0, 1.0, 0.0],
+                [0.0, 1.0, 1.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0],
+            ],
+            0.70,
+        ),
+    ];
+
+    let mut vertices: Vec<VoxelVertex> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+    let mut world_min = glam::Vec3::splat(f32::INFINITY);
+    let mut world_max = glam::Vec3::splat(f32::NEG_INFINITY);
+
+    for baked in &export.voxels {
+        let wx = baked.world[0] as f32 * unit;
+        let wy = baked.world[1] as f32 * unit;
+        let wz = baked.world[2] as f32 * layer_step;
+        let vmin = [wx, wy, wz];
+        let vmax = [wx + unit, wy + unit, wz + unit];
+
+        let base_color = [
+            baked.rgba[0] as f32 / 255.0,
+            baked.rgba[1] as f32 / 255.0,
+            baked.rgba[2] as f32 / 255.0,
+            baked.rgba[3] as f32 / 255.0,
+        ];
+
+        for (delta, corners, shade) in &face_directions {
+            let neighbor = [
+                baked.world[0] + delta[0],
+                baked.world[1] + delta[1],
+                baked.world[2] + delta[2],
+            ];
+            if occupied.contains(&neighbor) {
+                continue;
+            }
+
+            let face_color = [
+                (base_color[0] * shade).clamp(0.0, 1.0),
+                (base_color[1] * shade).clamp(0.0, 1.0),
+                (base_color[2] * shade).clamp(0.0, 1.0),
+                base_color[3],
+            ];
+
+            let base = vertices.len() as u32;
+            for corner in corners {
+                let pos = [
+                    vmin[0] + (vmax[0] - vmin[0]) * corner[0],
+                    vmin[1] + (vmax[1] - vmin[1]) * corner[1],
+                    vmin[2] + (vmax[2] - vmin[2]) * corner[2],
+                ];
+                let p = glam::Vec3::from_array(pos);
+                world_min = world_min.min(p);
+                world_max = world_max.max(p);
+                vertices.push(VoxelVertex {
+                    position: pos,
+                    color: face_color,
+                });
+            }
+            indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        }
+    }
+
+    if vertices.is_empty() || indices.is_empty() {
+        return None;
+    }
+
+    let bounds_min = world_min.to_array();
+    let bounds_max = world_max.to_array();
+    let index_count = indices.len() as u32;
+    Some(VoxelSceneRenderData {
+        bounds_min,
+        bounds_max,
+        object_ranges: vec![VoxelSceneObjectRange {
+            object_key: format!("composition:{}", export.id),
+            label: export.display_name.clone(),
+            index_start: 0,
+            index_count,
+            bounds_min,
+            bounds_max,
+        }],
+        vertices,
+        indices,
+    })
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ClearColor {
     pub r: f32,
@@ -749,8 +913,18 @@ impl VoxelEditorGlowRenderer {
         gl: &glow::Context,
         scene: &VoxelSceneRenderData,
         viewport: VoxelEditorViewport,
+        selected_object_key: Option<&str>,
+        ambient: f32,
     ) {
-        self.voxel_mesh.draw_editor_viewport(gl, viewport, scene);
+        let selected_range_index = selected_object_key.and_then(|key| {
+            scene
+                .object_ranges
+                .iter()
+                .position(|r| r.object_key == key)
+                .map(|i| i as u32)
+        });
+        self.voxel_mesh
+            .draw_editor_viewport(gl, viewport, scene, selected_range_index, ambient);
     }
 
     pub fn pick_viewport(
@@ -955,6 +1129,8 @@ impl VoxelMeshPipeline {
         gl: &glow::Context,
         viewport: VoxelEditorViewport,
         scene: &VoxelSceneRenderData,
+        selected_range_index: Option<u32>,
+        ambient: f32,
     ) {
         if scene.vertices.is_empty() || scene.indices.is_empty() {
             return;
@@ -988,6 +1164,9 @@ impl VoxelMeshPipeline {
             if let Some(location) = gl.get_uniform_location(self.program, "u_mvp") {
                 gl.uniform_matrix_4_f32_slice(Some(&location), false, &mvp.to_cols_array());
             }
+            if let Some(location) = gl.get_uniform_location(self.program, "u_ambient") {
+                gl.uniform_1_f32(Some(&location), ambient.clamp(0.0, 1.0));
+            }
 
             gl.bind_vertex_array(Some(self.vao));
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));
@@ -1008,6 +1187,42 @@ impl VoxelMeshPipeline {
                 glow::UNSIGNED_INT,
                 0,
             );
+
+            // Selection highlight pass: re-draw the selected object range using the flat-color
+            // pick shader with a semi-transparent yellow overlay.
+            if let Some(idx) = selected_range_index {
+                if let Some(range) = scene.object_ranges.get(idx as usize) {
+                    if range.index_count > 0 {
+                        gl.enable(glow::BLEND);
+                        gl.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+                        gl.use_program(Some(self.pick_program));
+                        if let Some(loc) =
+                            gl.get_uniform_location(self.pick_program, "u_mvp")
+                        {
+                            gl.uniform_matrix_4_f32_slice(
+                                Some(&loc),
+                                false,
+                                &mvp.to_cols_array(),
+                            );
+                        }
+                        if let Some(loc) =
+                            gl.get_uniform_location(self.pick_program, "u_pick_color")
+                        {
+                            gl.uniform_4_f32(Some(&loc), 1.0, 0.85, 0.2, 0.45);
+                        }
+                        gl.draw_elements(
+                            glow::TRIANGLES,
+                            range.index_count as i32,
+                            glow::UNSIGNED_INT,
+                            // Byte offset into the index buffer for this range.
+                            (range.index_start as usize * std::mem::size_of::<u32>()) as i32,
+                        );
+                        gl.use_program(None);
+                        gl.disable(glow::BLEND);
+                    }
+                }
+            }
+
             gl.bind_vertex_array(None);
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
             gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, None);
@@ -3232,8 +3447,10 @@ void main() {
 const VOXEL_MESH_FRAGMENT_SHADER: &str = r#"#version 330 core
 in vec4 v_color;
 out vec4 frag_color;
+uniform float u_ambient;
 void main() {
-    frag_color = v_color;
+    float a = clamp(u_ambient, 0.3, 1.0);
+    frag_color = vec4(v_color.rgb * a, v_color.a);
 }
 "#;
 

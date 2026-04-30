@@ -13,7 +13,8 @@ use egui_glow::glow::HasContext;
 use engine_assets::vox::{VoxAssetInfo, VoxModel, load_vox_file, scan_vox_files};
 use engine_render_gl::{
     TileInstance, TileMapRenderData, VoxelEditorGlowRenderer, VoxelEditorPickResult,
-    VoxelEditorViewport, VoxelSceneRenderData, pick_voxel_object_by_projected_bounds,
+    VoxelEditorViewport, VoxelSceneRenderData, baked_composition_to_scene_render_data,
+    pick_voxel_object_by_projected_bounds,
 };
 use game_data::defs::{
     LayerLegendEntry, MapLayersDef, TileLayerDef, TilesetDef, VoxelPanelBakedInstanceDef,
@@ -1062,10 +1063,11 @@ enum ValidationTarget {
 
 impl WorldPlacementState {
     fn load(project_root: &std::path::Path, map_id: &str) -> anyhow::Result<Self> {
-        let props_path = map_content_path(project_root, map_id, "props.ron");
-        let spawns_path = map_content_path(project_root, map_id, "spawns.ron");
-        let triggers_path = map_content_path(project_root, map_id, "triggers.ron");
-        let voxel_objects_path = map_content_path(project_root, map_id, "voxel_objects.ron");
+        let paths = editor_data_bridge::EditorContentPaths::new(project_root);
+        let props_path = paths.props_path(map_id);
+        let spawns_path = paths.spawns_path(map_id);
+        let triggers_path = paths.triggers_path(map_id);
+        let voxel_objects_path = paths.voxel_objects_path(map_id);
         let voxel_objects = if voxel_objects_path.exists() {
             game_data::loader::load_ron_file(&voxel_objects_path)
                 .with_context(|| format!("failed to load {}", voxel_objects_path.display()))?
@@ -5756,6 +5758,9 @@ struct StarlightRidgeEguiEditor {
     voxel_panel_designer: VoxelPanelDesignerState,
     worldgen_bake_preview: Option<WorldgenBakePreviewState>,
     content_reload_job: Option<ContentReloadJob>,
+    /// Cached GL render data for the Voxel Panels 3D Preview. Rebuilt whenever the
+    /// composition export's voxel count changes.
+    panel_preview_render_data: Option<(usize, VoxelSceneRenderData)>,
 }
 
 impl StarlightRidgeEguiEditor {
@@ -5885,6 +5890,7 @@ impl StarlightRidgeEguiEditor {
             voxel_panel_designer,
             worldgen_bake_preview: None,
             content_reload_job: None,
+            panel_preview_render_data: None,
         };
         editor.log("Phase 36 egui editor shell initialized.");
         editor.log(format!("Loaded content: {}", editor.registry.summary()));
@@ -9777,10 +9783,30 @@ impl StarlightRidgeEguiEditor {
             .as_ref()
             .filter(|_| !voxel_mesh_overlay_stale)
             .cloned();
+        let selected_key_for_gl: Option<String> = match self.editor_selection {
+            EditorSelection::VoxelObject => self
+                .world_placements
+                .as_ref()
+                .and_then(|state| {
+                    state
+                        .voxel_objects
+                        .objects
+                        .get(state.selected_voxel_object_index)
+                })
+                .map(|obj| format!("world:{}", obj.id)),
+            EditorSelection::SceneVoxelObject => self
+                .scene_voxel_preview
+                .as_ref()
+                .and_then(|preview| preview.entries.get(self.selected_scene_voxel_index))
+                .map(|entry| format!("scene:{}", entry.object_id)),
+            _ => None,
+        };
+        let gl_ambient = 1.0_f32;
         let painted_gl_viewport = if let (Some(renderer), Some(render_data)) =
             (self.scene3d_gl_renderer.clone(), render_data_for_gl)
         {
             let pick_result = self.scene3d_gl_pick_result.clone();
+            let selected_key_clone = selected_key_for_gl.clone();
             let callback = egui_glow::CallbackFn::new(move |_info, painter| {
                 let gl = painter.gl();
                 if let Ok(mut renderer) = renderer.lock() {
@@ -9802,7 +9828,13 @@ impl StarlightRidgeEguiEditor {
                             );
                         }
                     }
-                    renderer.draw_viewport(gl.as_ref(), &render_data, gl_viewport);
+                    renderer.draw_viewport(
+                        gl.as_ref(),
+                        &render_data,
+                        gl_viewport,
+                        selected_key_clone.as_deref(),
+                        gl_ambient,
+                    );
                 }
             });
             painter.add(egui::epaint::PaintCallback {
@@ -13946,6 +13978,131 @@ impl StarlightRidgeEguiEditor {
                 }
             });
         }
+
+        // Phase 53o: dirty indicator and save button for 3D composition edits.
+        ui.separator();
+        ui.horizontal_wrapped(|ui| {
+            let kit_dirty = self.voxel_panel_designer.dirty;
+            let dirty_label = if kit_dirty {
+                egui::RichText::new("Kit: UNSAVED ●")
+                    .color(egui::Color32::from_rgb(240, 160, 60))
+                    .strong()
+            } else {
+                egui::RichText::new("Kit: saved ✓")
+                    .color(egui::Color32::from_rgb(100, 210, 120))
+            };
+            ui.label(dirty_label);
+            let save_resp = ui.add_enabled(
+                kit_dirty,
+                egui::Button::new("Save 3D Edits"),
+            );
+            if save_resp.clicked() {
+                match self.voxel_panel_designer.save_with_backup() {
+                    Ok(backup_path) => {
+                        self.status = format!(
+                            "Saved 3D composition edits: {}{}",
+                            self.voxel_panel_designer.kit_path.display(),
+                            backup_path
+                                .map(|p| format!(" Backup: {}", p.display()))
+                                .unwrap_or_default()
+                        );
+                        self.log(self.status.clone());
+                    }
+                    Err(error) => {
+                        self.status = format!("Failed to save 3D edits: {error:#}");
+                        self.log(self.status.clone());
+                    }
+                }
+            }
+        });
+
+        // Phase 53o: constraint inspector for selected instance.
+        if let Some(instance) = self.voxel_panel_designer.selected_composition_instance() {
+            let id = instance.id.clone();
+            let x = instance.x;
+            let y = instance.y;
+            let z = instance.z;
+            let rotation = instance.rotation_degrees;
+            let overlap_messages = self
+                .voxel_panel_designer
+                .preview_overlap_diagnostics_messages(&export)
+                .into_iter()
+                .filter(|msg| msg.contains(&id))
+                .collect::<Vec<_>>();
+            ui.collapsing(format!("Constraint inspector: {id}"), |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(format!("Position: {x},{y},{z}"));
+                    ui.label(format!("Rotation: {rotation}°"));
+                });
+                let active_connections = export
+                    .connection_gizmos
+                    .iter()
+                    .filter(|conn| {
+                        conn.from_instance == id || conn.to_instance == id
+                    })
+                    .count();
+                ui.label(format!("Active connections: {active_connections}"));
+                if overlap_messages.is_empty() {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(100, 210, 120),
+                        "No overlap issues for this instance.",
+                    );
+                } else {
+                    for msg in &overlap_messages {
+                        ui.colored_label(egui::Color32::from_rgb(220, 150, 70), format!("⚠ {msg}"));
+                    }
+                }
+            });
+        }
+
+        // Gap 2: GL mesh preview of the baked composition.  Rebuild the render data only when
+        // the voxel count changes so we avoid re-uploading geometry every frame.
+        let export_voxel_count = export.voxels.len();
+        let needs_rebuild = self
+            .panel_preview_render_data
+            .as_ref()
+            .map(|(count, _)| *count != export_voxel_count)
+            .unwrap_or(true);
+        if needs_rebuild {
+            self.panel_preview_render_data =
+                baked_composition_to_scene_render_data(&export)
+                    .map(|data| (export_voxel_count, data));
+        }
+
+        if let (Some(renderer), Some((_, panel_render_data))) = (
+            self.scene3d_gl_renderer.clone(),
+            self.panel_preview_render_data.as_ref(),
+        ) {
+            let panel_render_data = panel_render_data.clone();
+            let gl_viewport = VoxelEditorViewport {
+                width: (viewport_width as u32).max(1),
+                height: 200,
+                yaw_degrees: self.voxel_panel_designer.preview_camera.yaw_degrees,
+                pitch_degrees: self.voxel_panel_designer.preview_camera.pitch_degrees,
+                zoom: 1.0,
+            };
+            ui.label("GL mesh preview:");
+            let (mesh_rect, _) = ui.allocate_exact_size(
+                egui::vec2(viewport_width, 200.0),
+                egui::Sense::hover(),
+            );
+            let callback = egui_glow::CallbackFn::new(move |_info, painter| {
+                let gl = painter.gl();
+                if let Ok(mut renderer) = renderer.lock() {
+                    renderer.draw_viewport(
+                        gl.as_ref(),
+                        &panel_render_data,
+                        gl_viewport,
+                        None,
+                        1.0,
+                    );
+                }
+            });
+            ui.painter().add(egui::epaint::PaintCallback {
+                rect: mesh_rect,
+                callback: Arc::new(callback),
+            });
+        }
     }
 
     fn draw_voxel_panel_validation_panel(&mut self, ui: &mut egui::Ui) {
@@ -14158,14 +14315,53 @@ impl StarlightRidgeEguiEditor {
             "Generate and validate base character and tool .vox templates from built-in profiles.",
         );
 
-        let profiles = voxel_generator::profiles::default_profiles();
+        let mut profiles = voxel_generator::profiles::default_profiles();
+        profiles.extend(voxel_generator::profiles::registry_profiles());
         let project_root = self.project_root.clone();
 
         ui.horizontal_wrapped(|ui| {
             if ui.button("Generate All Templates").clicked() {
+                let mut all_paths = Vec::new();
+                let mut had_error = false;
                 match voxel_generator::generate_phase53b_templates(&project_root) {
                     Ok(paths) => {
-                        let msg = format!("Generated {} .vox template(s).", paths.len());
+                        all_paths.extend(paths);
+                    }
+                    Err(err) => {
+                        had_error = true;
+                        let msg = format!("Default template generation failed: {err:#}");
+                        self.status = msg.clone();
+                        self.log(msg.clone());
+                        self.generator_log.push(format!("  ✗ {msg}"));
+                    }
+                }
+                match voxel_generator::generate_registry_templates(&project_root) {
+                    Ok(paths) => {
+                        all_paths.extend(paths);
+                    }
+                    Err(err) => {
+                        had_error = true;
+                        let msg = format!("Registry template generation failed: {err:#}");
+                        self.status = msg.clone();
+                        self.log(msg.clone());
+                        self.generator_log.push(format!("  ✗ {msg}"));
+                    }
+                }
+                if !had_error {
+                    let msg = format!("Generated {} .vox template(s).", all_paths.len());
+                    self.status = msg.clone();
+                    self.log(msg);
+                }
+                for path in &all_paths {
+                    self.generator_log.push(format!("  ✓ {}", path.display()));
+                }
+                self.loaded_vox_cache = None;
+            }
+            if ui.button("Generate Registry Templates").clicked() {
+                match voxel_generator::generate_registry_templates(&project_root) {
+                    Ok(paths) => {
+                        let msg =
+                            format!("Generated {} registry .vox template(s).", paths.len());
                         self.status = msg.clone();
                         self.log(msg);
                         for path in &paths {
@@ -14174,7 +14370,7 @@ impl StarlightRidgeEguiEditor {
                         self.loaded_vox_cache = None;
                     }
                     Err(err) => {
-                        let msg = format!("Generation failed: {err:#}");
+                        let msg = format!("Registry generation failed: {err:#}");
                         self.status = msg.clone();
                         self.log(msg.clone());
                         self.generator_log.push(format!("  ✗ {msg}"));
@@ -14269,6 +14465,57 @@ impl StarlightRidgeEguiEditor {
                                             self.status = msg.clone();
                                             self.generator_log.push(format!("  ✗ {msg}"));
                                         }
+                                    }
+                                }
+                                // Gap 6: Register to catalog button.
+                                let registry_path = project_root
+                                    .join("content")
+                                    .join("voxel_assets")
+                                    .join("voxel_asset_registry.ron");
+                                let already_in_registry = if registry_path.exists() {
+                                    std::fs::read_to_string(&registry_path)
+                                        .unwrap_or_default()
+                                        .contains(profile.output_path)
+                                } else {
+                                    false
+                                };
+                                if already_in_registry {
+                                    ui.colored_label(
+                                        egui::Color32::from_rgb(100, 200, 120),
+                                        "Already in registry.",
+                                    );
+                                } else if ui.add_enabled(exists, egui::Button::new("Register to catalog").small()).clicked() {
+                                    // Build a minimal RON entry. The format must match the
+                                    // VoxelAssetDef enum variant expected by SceneVoxelAssetFile.
+                                    let entry_str = build_registry_entry(profile.id, profile.output_path);
+                                    let mut updated = false;
+                                    if registry_path.exists() {
+                                        if let Ok(mut contents) = std::fs::read_to_string(&registry_path) {
+                                            if let Some(assets_start) = contents.find("assets: [") {
+                                                if let Some(close) = contents[assets_start..].find(']') {
+                                                    let insert_pos = assets_start + close;
+                                                    contents.insert_str(insert_pos, &entry_str);
+                                                    match std::fs::write(&registry_path, &contents) {
+                                                        Ok(()) => {
+                                                            let msg = format!("Registered '{}' in voxel_asset_registry.ron.", profile.id);
+                                                            self.status = msg.clone();
+                                                            self.generator_log.push(format!("  ✓ {msg}"));
+                                                            updated = true;
+                                                        }
+                                                        Err(err) => {
+                                                            let msg = format!("Failed to write registry: {err:#}");
+                                                            self.status = msg.clone();
+                                                            self.generator_log.push(format!("  ✗ {msg}"));
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if !updated && !registry_path.exists() {
+                                        let msg = "Registry file not found; generate templates first.".to_string();
+                                        self.status = msg.clone();
+                                        self.generator_log.push(format!("  ✗ {msg}"));
                                     }
                                 }
                             });
@@ -14559,16 +14806,159 @@ impl StarlightRidgeEguiEditor {
                     "Missing frame checks",
                 ],
             ),
-            CharacterSubTab::Preview => self.draw_workspace_notes(
-                ui,
-                "Preview",
-                &[
-                    "Paperdoll preview",
-                    "Animation playback",
-                    "Export validation",
-                ],
-            ),
+            CharacterSubTab::Preview => self.draw_character_rig_preview(ui),
         }
+    }
+
+    fn draw_character_rig_preview(&mut self, ui: &mut egui::Ui) {
+        use game_data::vox_rig::VoxRigDef;
+
+        ui.heading("Voxel Rig Preview (Phase 53o placeholder)");
+        ui.small("Displays the placeholder adult character skeleton. Bone positions are in local voxel coordinates (Z-up). This overlay will be wired to a loaded .vox model once character source files are generated.");
+        ui.separator();
+
+        let rig = VoxRigDef::placeholder_adult();
+        ui.horizontal_wrapped(|ui| {
+            ui.label(format!("Rig: {} · {} bone(s)", rig.display_name, rig.bones.len()));
+        });
+
+        let viewport_size = egui::vec2(ui.available_width().max(260.0).min(600.0), 360.0);
+        let (rect, _) =
+            ui.allocate_exact_size(viewport_size, egui::Sense::hover());
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, 6.0, egui::Color32::from_rgb(14, 17, 24));
+        painter.rect_stroke(
+            rect,
+            6.0,
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 64, 80)),
+            egui::StrokeKind::Inside,
+        );
+
+        // Simple orthographic projection: x -> screen x, z -> screen y (z-up means y goes up)
+        // We project the YZ plane (front view) with the bone centred in the viewport.
+        let cx = rect.center().x;
+        let cy = rect.center().y + 60.0;
+        let scale = 1.8_f32;
+
+        let project_front = |pos: [i32; 3]| -> egui::Pos2 {
+            egui::pos2(
+                cx + pos[0] as f32 * scale,
+                cy - pos[2] as f32 * scale,
+            )
+        };
+
+        // Build parent lookup for connectivity.
+        let bone_id_to_index: std::collections::HashMap<&str, usize> = rig
+            .bones
+            .iter()
+            .enumerate()
+            .map(|(i, bone)| (bone.id.as_str(), i))
+            .collect();
+
+        // Draw floor marker.
+        painter.line_segment(
+            [
+                egui::pos2(rect.left() + 8.0, cy + 0.0),
+                egui::pos2(rect.right() - 8.0, cy + 0.0),
+            ],
+            egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(80, 90, 100, 140)),
+        );
+
+        // Draw bones.
+        for bone in &rig.bones {
+            let head = project_front(bone.head);
+            let tail = project_front(bone.tail);
+
+            // Draw bone as a line with endpoint dots.
+            painter.line_segment(
+                [head, tail],
+                egui::Stroke::new(2.2, egui::Color32::from_rgb(140, 190, 240)),
+            );
+            painter.circle_filled(head, 3.5, egui::Color32::from_rgb(200, 220, 255));
+            painter.circle_filled(tail, 3.0, egui::Color32::from_rgb(160, 200, 240));
+
+            // Draw attachment anchor if present.
+            if let Some(anchor) = bone.attachment_anchor {
+                let anchor_pos = project_front(anchor);
+                painter.circle_stroke(
+                    anchor_pos,
+                    4.5,
+                    egui::Stroke::new(1.6, egui::Color32::from_rgb(240, 200, 80)),
+                );
+                painter.line_segment(
+                    [tail, anchor_pos],
+                    egui::Stroke::new(
+                        1.0,
+                        egui::Color32::from_rgba_unmultiplied(240, 200, 80, 140),
+                    ),
+                );
+            }
+
+            // Draw bone label at midpoint.
+            let mid = egui::pos2(
+                (head.x + tail.x) * 0.5 + 3.0,
+                (head.y + tail.y) * 0.5,
+            );
+            painter.text(
+                mid,
+                egui::Align2::LEFT_CENTER,
+                bone.label.as_str(),
+                egui::FontId::monospace(9.0),
+                egui::Color32::from_rgba_unmultiplied(200, 214, 230, 200),
+            );
+        }
+
+        // Draw parent-child links from head to parent tail.
+        for bone in &rig.bones {
+            if bone.parent_id.is_empty() {
+                continue;
+            }
+            if let Some(&parent_idx) = bone_id_to_index.get(bone.parent_id.as_str()) {
+                let parent_tail = project_front(rig.bones[parent_idx].tail);
+                let head = project_front(bone.head);
+                if parent_tail.distance(head) > 1.0 {
+                    painter.line_segment(
+                        [parent_tail, head],
+                        egui::Stroke::new(
+                            1.0,
+                            egui::Color32::from_rgba_unmultiplied(120, 180, 255, 100),
+                        ),
+                    );
+                }
+            }
+        }
+
+        // Legend.
+        painter.text(
+            rect.left_top() + egui::vec2(8.0, 8.0),
+            egui::Align2::LEFT_TOP,
+            format!("{} — front view (X/Z plane) — ○ = attachment anchor", rig.id),
+            egui::FontId::monospace(9.0),
+            egui::Color32::from_rgba_unmultiplied(180, 196, 214, 200),
+        );
+
+        ui.separator();
+        ui.heading("Bone list");
+        egui::ScrollArea::vertical()
+            .id_salt("character_rig_bone_list")
+            .max_height(200.0)
+            .show(ui, |ui| {
+                for bone in &rig.bones {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.monospace(format!("{:<24}", bone.id));
+                        ui.label(format!(
+                            "parent: '{}'  head: {:?}  tail: {:?}",
+                            bone.parent_id, bone.head, bone.tail
+                        ));
+                        if let Some(anchor) = bone.attachment_anchor {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(240, 200, 80),
+                                format!("anchor: {:?}", anchor),
+                            );
+                        }
+                    });
+                }
+            });
     }
 
     fn draw_logic_workspace(&mut self, ui: &mut egui::Ui) {
@@ -16221,13 +16611,33 @@ fn validate_vox_profile(path: &std::path::Path, expected: [u8; 3]) -> Option<Str
     let model = load_vox_file(path).ok()?;
     let (ew, eh, ed) = (expected[0] as u32, expected[1] as u32, expected[2] as u32);
     if model.width != ew || model.height != eh || model.depth != ed {
-        Some(format!(
+        return Some(format!(
             "Dimensions {}×{}×{} do not match expected {}×{}×{}.",
             model.width, model.height, model.depth, ew, eh, ed
-        ))
-    } else if model.voxels.is_empty() {
-        Some("Model has no voxels.".to_string())
-    } else {
-        None
+        ));
     }
+    if model.voxels.is_empty() {
+        return Some("Model has no voxels.".to_string());
+    }
+    // Budget check: voxel count should not exceed the bounding-box volume to catch corrupt files.
+    let max_budget = (ew * eh * ed) as usize;
+    if model.voxels.len() > max_budget {
+        return Some(format!(
+            "Voxel count {} exceeds profile volume budget {} ({}×{}×{}).",
+            model.voxels.len(),
+            max_budget,
+            ew,
+            eh,
+            ed
+        ));
+    }
+    None
+}
+
+/// Build a minimal RON snippet that appends one `VoxelAssetDef` entry into the assets list of
+/// `voxel_asset_registry.ron`.  The format matches `SceneVoxelAssetFile::VoxelAssetDef`.
+fn build_registry_entry(id: &str, source_path: &str) -> String {
+    format!(
+        "\n    // auto-registered by voxel generator\n    VoxelAssetDef((\n        id: \"{id}\",\n        source_path: \"{source_path}\",\n        voxels_per_tile: 16,\n        scale: 1.0,\n        pivot: PivotDef((\n            mode: FeetCenter,\n            offset: (0.0, 0.0, 0.0),\n        )),\n    )),"
+    )
 }
