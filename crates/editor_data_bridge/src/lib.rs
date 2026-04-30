@@ -50,6 +50,24 @@ impl EditorContentPaths {
     pub fn voxel_objects_path(&self, map_id: &str) -> PathBuf {
         self.map_file(map_id, "voxel_objects.ron")
     }
+
+    pub fn scene_dir(&self, map_id: &str) -> PathBuf {
+        self.project_root
+            .join("content")
+            .join("scenes")
+            .join(map_id)
+    }
+
+    pub fn scene_voxel_objects_path(&self, map_id: &str) -> PathBuf {
+        self.scene_dir(map_id).join("voxel_objects.ron")
+    }
+
+    pub fn voxel_panel_kit_dir(&self) -> PathBuf {
+        self.project_root
+            .join("content")
+            .join("editor_voxel_panels")
+            .join("panel_kits")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -200,6 +218,30 @@ pub fn load_world_placements(
     })
 }
 
+/// Save a map's voxel object list with a temp-write-then-rename and a timestamped backup.
+pub fn save_voxel_objects_with_backup<T: Serialize>(
+    project_root: impl AsRef<Path>,
+    map_id: &str,
+    value: &T,
+) -> anyhow::Result<SaveOutcome> {
+    let paths = EditorContentPaths::new(project_root.as_ref());
+    save_ron_with_backup(paths.voxel_objects_path(map_id), value, "voxel_objects")
+}
+
+/// Save a scene's voxel object list with a temp-write-then-rename and a timestamped backup.
+pub fn save_scene_voxel_objects_with_backup<T: Serialize>(
+    project_root: impl AsRef<Path>,
+    map_id: &str,
+    value: &T,
+) -> anyhow::Result<SaveOutcome> {
+    let paths = EditorContentPaths::new(project_root.as_ref());
+    save_ron_with_backup(
+        paths.scene_voxel_objects_path(map_id),
+        value,
+        "scene_voxel_objects",
+    )
+}
+
 pub fn save_ron_with_backup<T: Serialize>(
     path: impl AsRef<Path>,
     value: &T,
@@ -312,6 +354,14 @@ mod tests {
         assert_eq!(
             paths.voxel_objects_path("starter_farm"),
             PathBuf::from("project/content/maps/starter_farm/voxel_objects.ron")
+        );
+        assert_eq!(
+            paths.scene_voxel_objects_path("starter_farm"),
+            PathBuf::from("project/content/scenes/starter_farm/voxel_objects.ron")
+        );
+        assert_eq!(
+            paths.voxel_panel_kit_dir(),
+            PathBuf::from("project/content/editor_voxel_panels/panel_kits")
         );
     }
 
