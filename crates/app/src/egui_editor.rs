@@ -14485,36 +14485,30 @@ impl StarlightRidgeEguiEditor {
                                         "Already in registry.",
                                     );
                                 } else if ui.add_enabled(exists, egui::Button::new("Register to catalog").small()).clicked() {
-                                    let entry_str = format!(
-                                        "\n    // auto-registered by voxel generator\n    VoxelAssetDef((\n        id: \"{id}\",\n        source_path: \"{path}\",\n        voxels_per_tile: 16,\n        scale: 1.0,\n        pivot: PivotDef((\n            mode: FeetCenter,\n            offset: (0.0, 0.0, 0.0),\n        )),\n    )),",
-                                        id = profile.id,
-                                        path = profile.output_path,
-                                    );
+                                    // Build a minimal RON entry. The format must match the
+                                    // VoxelAssetDef enum variant expected by SceneVoxelAssetFile.
+                                    let entry_str = build_registry_entry(profile.id, profile.output_path);
                                     let mut updated = false;
                                     if registry_path.exists() {
                                         if let Ok(mut contents) = std::fs::read_to_string(&registry_path) {
-                                            if let Some(pos) = contents.rfind(')') {
-                                                // Insert before the last closing paren of the assets list
-                                                if let Some(assets_start) = contents.find("assets: [") {
-                                                    if let Some(close) = contents[assets_start..].find(']') {
-                                                        let insert_pos = assets_start + close;
-                                                        contents.insert_str(insert_pos, &entry_str);
-                                                        match std::fs::write(&registry_path, &contents) {
-                                                            Ok(()) => {
-                                                                let msg = format!("Registered '{}' in voxel_asset_registry.ron.", profile.id);
-                                                                self.status = msg.clone();
-                                                                self.generator_log.push(format!("  ✓ {msg}"));
-                                                                updated = true;
-                                                            }
-                                                            Err(err) => {
-                                                                let msg = format!("Failed to write registry: {err:#}");
-                                                                self.status = msg.clone();
-                                                                self.generator_log.push(format!("  ✗ {msg}"));
-                                                            }
+                                            if let Some(assets_start) = contents.find("assets: [") {
+                                                if let Some(close) = contents[assets_start..].find(']') {
+                                                    let insert_pos = assets_start + close;
+                                                    contents.insert_str(insert_pos, &entry_str);
+                                                    match std::fs::write(&registry_path, &contents) {
+                                                        Ok(()) => {
+                                                            let msg = format!("Registered '{}' in voxel_asset_registry.ron.", profile.id);
+                                                            self.status = msg.clone();
+                                                            self.generator_log.push(format!("  ✓ {msg}"));
+                                                            updated = true;
+                                                        }
+                                                        Err(err) => {
+                                                            let msg = format!("Failed to write registry: {err:#}");
+                                                            self.status = msg.clone();
+                                                            self.generator_log.push(format!("  ✗ {msg}"));
                                                         }
                                                     }
                                                 }
-                                                let _ = pos;
                                             }
                                         }
                                     }
@@ -16638,4 +16632,12 @@ fn validate_vox_profile(path: &std::path::Path, expected: [u8; 3]) -> Option<Str
         ));
     }
     None
+}
+
+/// Build a minimal RON snippet that appends one `VoxelAssetDef` entry into the assets list of
+/// `voxel_asset_registry.ron`.  The format matches `SceneVoxelAssetFile::VoxelAssetDef`.
+fn build_registry_entry(id: &str, source_path: &str) -> String {
+    format!(
+        "\n    // auto-registered by voxel generator\n    VoxelAssetDef((\n        id: \"{id}\",\n        source_path: \"{source_path}\",\n        voxels_per_tile: 16,\n        scale: 1.0,\n        pivot: PivotDef((\n            mode: FeetCenter,\n            offset: (0.0, 0.0, 0.0),\n        )),\n    )),"
+    )
 }

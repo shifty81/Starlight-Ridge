@@ -1214,6 +1214,7 @@ impl VoxelMeshPipeline {
                             glow::TRIANGLES,
                             range.index_count as i32,
                             glow::UNSIGNED_INT,
+                            // Byte offset into the index buffer for this range.
                             (range.index_start as usize * std::mem::size_of::<u32>()) as i32,
                         );
                         gl.use_program(None);
