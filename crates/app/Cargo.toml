@@ -31,7 +31,9 @@ shared_types = { path = "../shared_types" }
 game_ui = { path = "../game_ui" }
 editor_core = { path = "../editor_core" }
 editor_undo = { path = "../editor_undo" }
+editor_data_bridge = { path = "../editor_data_bridge" }
 voxel_generator = { path = "../voxel_generator" }
 
 # Phase 36: editor.exe UI is now built with egui/eframe instead of the custom GL overlay.
-eframe = "0.34.1"
+eframe = { version = "0.34.1", features = ["glow"] }
+egui_glow = "0.34.1"

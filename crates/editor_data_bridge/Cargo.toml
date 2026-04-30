@@ -8,5 +8,6 @@ authors.workspace = true
 [dependencies]
 anyhow.workspace = true
 log.workspace = true
+serde.workspace = true
 game_data = { path = "../game_data" }
 game_world = { path = "../game_world" }

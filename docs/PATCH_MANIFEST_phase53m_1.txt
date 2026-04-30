@@ -1,0 +1,16 @@
+Starlight_Ridge_phase53m_1_compile_fix_duplicate_instance_borrow
+
+Purpose:
+- Fix E0506 in duplicate_selected_composition_instance_3d.
+- The 53m duplicate path held a mutable borrow of the selected composition while assigning self.selected_composition_instance_index.
+- The fix scopes the mutable composition borrow in a block, captures the new index and id, then updates self fields after the borrow ends.
+
+Files changed:
+- crates/app/src/egui_editor.rs
+- docs/PATCH_MANIFEST_phase53m_1.txt
+
+Validation target:
+- cargo check --workspace
+- RUN_EDITOR_DEBUG.bat
+
+No gameplay changes.

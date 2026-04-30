@@ -1,0 +1,11 @@
+Phase 53m — Voxel Composition 3D Connection Editing + Snap Preview
+
+Changed:
+- crates/app/src/egui_editor.rs
+- docs/PHASE53M_VOXEL_COMPOSITION_3D_CONNECTION_EDITING_SNAP_PREVIEW.md
+- docs/PATCH_MANIFEST_phase53m.txt
+
+Scope:
+- Editor-only voxel panel composition 3D viewport improvements.
+- No gameplay changes.
+- No schema migration.

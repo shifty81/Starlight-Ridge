@@ -71,6 +71,174 @@ pub struct VoxelSceneRenderData {
     pub indices: Vec<u32>,
     pub bounds_min: [f32; 3],
     pub bounds_max: [f32; 3],
+    pub object_ranges: Vec<VoxelSceneObjectRange>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VoxelSceneObjectRange {
+    pub object_key: String,
+    pub label: String,
+    pub index_start: u32,
+    pub index_count: u32,
+    pub bounds_min: [f32; 3],
+    pub bounds_max: [f32; 3],
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct VoxelEditorViewport {
+    pub width: u32,
+    pub height: u32,
+    pub yaw_degrees: f32,
+    pub pitch_degrees: f32,
+    pub zoom: f32,
+}
+
+impl Default for VoxelEditorViewport {
+    fn default() -> Self {
+        Self {
+            width: 1,
+            height: 1,
+            yaw_degrees: -35.0,
+            pitch_degrees: 58.0,
+            zoom: 1.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct VoxelEditorViewportRequest {
+    pub scene: VoxelSceneRenderData,
+    pub viewport: VoxelEditorViewport,
+    pub selected_object_key: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VoxelEditorPickResult {
+    pub object_key: String,
+    pub label: String,
+    pub distance_to_center: f32,
+}
+
+fn encode_pick_id(id: u32) -> [f32; 4] {
+    [
+        ((id >> 16) & 0xff) as f32 / 255.0,
+        ((id >> 8) & 0xff) as f32 / 255.0,
+        (id & 0xff) as f32 / 255.0,
+        1.0,
+    ]
+}
+
+fn decode_pick_id(pixel: [u8; 4]) -> u32 {
+    ((pixel[0] as u32) << 16) | ((pixel[1] as u32) << 8) | pixel[2] as u32
+}
+
+pub fn pick_voxel_object_by_projected_bounds(
+    scene: &VoxelSceneRenderData,
+    viewport: VoxelEditorViewport,
+    pointer_x: f32,
+    pointer_y: f32,
+) -> Option<VoxelEditorPickResult> {
+    if scene.object_ranges.is_empty() || viewport.width == 0 || viewport.height == 0 {
+        return None;
+    }
+    let mvp = voxel_editor_view_projection(scene, viewport)?;
+    let pointer = glam::Vec2::new(pointer_x, pointer_y);
+    let mut best: Option<VoxelEditorPickResult> = None;
+
+    for range in &scene.object_ranges {
+        let rect = projected_bounds_rect(range.bounds_min, range.bounds_max, viewport, mvp)?;
+        if pointer.x < rect[0] || pointer.y < rect[1] || pointer.x > rect[2] || pointer.y > rect[3]
+        {
+            continue;
+        }
+        let center = glam::Vec2::new((rect[0] + rect[2]) * 0.5, (rect[1] + rect[3]) * 0.5);
+        let distance_to_center = pointer.distance(center);
+        if best
+            .as_ref()
+            .is_none_or(|current| distance_to_center < current.distance_to_center)
+        {
+            best = Some(VoxelEditorPickResult {
+                object_key: range.object_key.clone(),
+                label: range.label.clone(),
+                distance_to_center,
+            });
+        }
+    }
+
+    best
+}
+
+fn voxel_editor_view_projection(
+    scene: &VoxelSceneRenderData,
+    viewport: VoxelEditorViewport,
+) -> Option<glam::Mat4> {
+    let min = glam::Vec3::from_array(scene.bounds_min);
+    let max = glam::Vec3::from_array(scene.bounds_max);
+    if !min.is_finite() || !max.is_finite() {
+        return None;
+    }
+
+    let center = (min + max) * 0.5;
+    let extent = (max - min).max(glam::Vec3::splat(1.0));
+    let radius = extent.length().max(1.0);
+    let yaw = viewport.yaw_degrees.to_radians();
+    let pitch = viewport.pitch_degrees.to_radians().clamp(0.1, 1.45);
+    let distance = (radius * 1.8 / viewport.zoom.clamp(0.1, 4.0)).max(1.0);
+    let eye_offset = glam::Vec3::new(
+        yaw.sin() * pitch.cos(),
+        -yaw.cos() * pitch.cos(),
+        pitch.sin(),
+    ) * distance;
+    let eye = center + eye_offset;
+    let aspect = viewport.width.max(1) as f32 / viewport.height.max(1) as f32;
+    let view = glam::Mat4::look_at_rh(eye, center, glam::Vec3::Z);
+    let projection =
+        glam::Mat4::perspective_rh_gl(40.0_f32.to_radians(), aspect.max(0.1), 0.01, radius * 8.0);
+    Some(projection * view)
+}
+
+fn projected_bounds_rect(
+    bounds_min: [f32; 3],
+    bounds_max: [f32; 3],
+    viewport: VoxelEditorViewport,
+    mvp: glam::Mat4,
+) -> Option<[f32; 4]> {
+    let mut min = glam::Vec2::splat(f32::INFINITY);
+    let mut max = glam::Vec2::splat(f32::NEG_INFINITY);
+    for corner in voxel_bounds_corners(bounds_min, bounds_max) {
+        let clip = mvp * glam::Vec4::new(corner[0], corner[1], corner[2], 1.0);
+        if clip.w.abs() <= f32::EPSILON {
+            continue;
+        }
+        let ndc = clip.truncate() / clip.w;
+        if !ndc.is_finite() {
+            continue;
+        }
+        let screen = glam::Vec2::new(
+            (ndc.x * 0.5 + 0.5) * viewport.width as f32,
+            (1.0 - (ndc.y * 0.5 + 0.5)) * viewport.height as f32,
+        );
+        min = min.min(screen);
+        max = max.max(screen);
+    }
+    if min.is_finite() && max.is_finite() {
+        Some([min.x, min.y, max.x, max.y])
+    } else {
+        None
+    }
+}
+
+fn voxel_bounds_corners(bounds_min: [f32; 3], bounds_max: [f32; 3]) -> [[f32; 3]; 8] {
+    [
+        [bounds_min[0], bounds_min[1], bounds_min[2]],
+        [bounds_max[0], bounds_min[1], bounds_min[2]],
+        [bounds_max[0], bounds_max[1], bounds_min[2]],
+        [bounds_min[0], bounds_max[1], bounds_min[2]],
+        [bounds_min[0], bounds_min[1], bounds_max[2]],
+        [bounds_max[0], bounds_min[1], bounds_max[2]],
+        [bounds_max[0], bounds_max[1], bounds_max[2]],
+        [bounds_min[0], bounds_max[1], bounds_max[2]],
+    ]
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -166,6 +334,7 @@ pub struct RenderBootstrap {
     textured_quad: TexturedQuadPipeline,
     grid: GridPipeline,
     voxel_mesh: VoxelMeshPipeline,
+    voxel_pick: VoxelPickFramebuffer,
     ui_overlay: UiOverlayPipeline,
     editor_shell_visible: bool,
     editor_shell_state: EditorShellRenderState,
@@ -243,6 +412,8 @@ impl RenderBootstrap {
         let grid = GridPipeline::new(&gl).context("failed to build debug grid pipeline")?;
         let voxel_mesh =
             VoxelMeshPipeline::new(&gl).context("failed to build voxel mesh pipeline")?;
+        let voxel_pick =
+            VoxelPickFramebuffer::new(&gl, 1, 1).context("failed to build voxel pick buffer")?;
         let ui_overlay =
             UiOverlayPipeline::new(&gl).context("failed to build editor shell overlay pipeline")?;
         let render_world_width = tile_map_data
@@ -284,6 +455,7 @@ impl RenderBootstrap {
             textured_quad,
             grid,
             voxel_mesh,
+            voxel_pick,
             ui_overlay,
             editor_shell_visible: false,
             editor_shell_state: EditorShellRenderState::default(),
@@ -471,6 +643,58 @@ impl RenderBootstrap {
         Ok(())
     }
 
+    pub fn pick_voxel_object_gpu(
+        &mut self,
+        scene: &VoxelSceneRenderData,
+        viewport: VoxelEditorViewport,
+        pointer_x: u32,
+        pointer_y: u32,
+    ) -> anyhow::Result<Option<VoxelEditorPickResult>> {
+        if scene.object_ranges.is_empty()
+            || viewport.width == 0
+            || viewport.height == 0
+            || pointer_x >= viewport.width
+            || pointer_y >= viewport.height
+        {
+            return Ok(None);
+        }
+
+        self.voxel_pick
+            .ensure_size(&self.gl, viewport.width, viewport.height)?;
+        self.voxel_pick.bind_for_render(&self.gl);
+        self.voxel_mesh.draw_pick(&self.gl, viewport, scene);
+        let pixel = self.voxel_pick.read_pixel(&self.gl, pointer_x, pointer_y);
+        self.voxel_pick.unbind(&self.gl);
+        unsafe {
+            self.gl.viewport(
+                0,
+                0,
+                self.viewport_width as i32,
+                self.viewport_height as i32,
+            );
+            self.gl.clear_color(
+                self.clear_color.r,
+                self.clear_color.g,
+                self.clear_color.b,
+                self.clear_color.a,
+            );
+        }
+
+        let pick_id = decode_pick_id(pixel);
+        if pick_id == 0 {
+            return Ok(None);
+        }
+        let Some(range) = scene.object_ranges.get((pick_id - 1) as usize) else {
+            return Ok(None);
+        };
+
+        Ok(Some(VoxelEditorPickResult {
+            object_key: range.object_key.clone(),
+            label: range.label.clone(),
+            distance_to_center: 0.0,
+        }))
+    }
+
     fn log_renderer_info(&self) {
         unsafe {
             let version = self.gl.get_parameter_string(glow::VERSION);
@@ -499,9 +723,79 @@ impl Drop for RenderBootstrap {
                 prop_sprite_sheet.destroy(&self.gl);
             }
             self.voxel_mesh.destroy(&self.gl);
+            self.voxel_pick.destroy(&self.gl);
             self.ui_overlay.destroy(&self.gl);
             self.textured_quad.destroy(&self.gl);
             self.grid.destroy(&self.gl);
+        }
+    }
+}
+
+pub struct VoxelEditorGlowRenderer {
+    voxel_mesh: VoxelMeshPipeline,
+    voxel_pick: VoxelPickFramebuffer,
+}
+
+impl VoxelEditorGlowRenderer {
+    pub fn new(gl: &glow::Context) -> anyhow::Result<Self> {
+        Ok(Self {
+            voxel_mesh: VoxelMeshPipeline::new(gl)?,
+            voxel_pick: VoxelPickFramebuffer::new(gl, 1, 1)?,
+        })
+    }
+
+    pub fn draw_viewport(
+        &mut self,
+        gl: &glow::Context,
+        scene: &VoxelSceneRenderData,
+        viewport: VoxelEditorViewport,
+    ) {
+        self.voxel_mesh.draw_editor_viewport(gl, viewport, scene);
+    }
+
+    pub fn pick_viewport(
+        &mut self,
+        gl: &glow::Context,
+        scene: &VoxelSceneRenderData,
+        viewport: VoxelEditorViewport,
+        pointer_x: u32,
+        pointer_y: u32,
+    ) -> anyhow::Result<Option<VoxelEditorPickResult>> {
+        if scene.object_ranges.is_empty()
+            || viewport.width == 0
+            || viewport.height == 0
+            || pointer_x >= viewport.width
+            || pointer_y >= viewport.height
+        {
+            return Ok(None);
+        }
+
+        self.voxel_pick
+            .ensure_size(gl, viewport.width, viewport.height)?;
+        self.voxel_pick.bind_for_render(gl);
+        self.voxel_mesh.draw_pick(gl, viewport, scene);
+        let pixel = self.voxel_pick.read_pixel(gl, pointer_x, pointer_y);
+        self.voxel_pick.unbind(gl);
+
+        let pick_id = decode_pick_id(pixel);
+        if pick_id == 0 {
+            return Ok(None);
+        }
+        let Some(range) = scene.object_ranges.get((pick_id - 1) as usize) else {
+            return Ok(None);
+        };
+
+        Ok(Some(VoxelEditorPickResult {
+            object_key: range.object_key.clone(),
+            label: range.label.clone(),
+            distance_to_center: 0.0,
+        }))
+    }
+
+    pub unsafe fn destroy(&self, gl: &glow::Context) {
+        unsafe {
+            self.voxel_mesh.destroy(gl);
+            self.voxel_pick.destroy(gl);
         }
     }
 }
@@ -520,6 +814,7 @@ struct VoxelMeshVertex {
 
 struct VoxelMeshPipeline {
     program: glow::Program,
+    pick_program: glow::Program,
     vao: glow::VertexArray,
     vbo: glow::Buffer,
     ebo: glow::Buffer,
@@ -529,6 +824,8 @@ impl VoxelMeshPipeline {
     fn new(gl: &glow::Context) -> anyhow::Result<Self> {
         let program = create_program(gl, VOXEL_MESH_VERTEX_SHADER, VOXEL_MESH_FRAGMENT_SHADER)
             .context("voxel mesh shader program failed")?;
+        let pick_program = create_program(gl, VOXEL_PICK_VERTEX_SHADER, VOXEL_PICK_FRAGMENT_SHADER)
+            .context("voxel pick shader program failed")?;
         let vao = unsafe { gl.create_vertex_array() }
             .map_err(|e| anyhow::anyhow!("create voxel mesh VAO: {e}"))?;
         let vbo = unsafe { gl.create_buffer() }
@@ -563,6 +860,7 @@ impl VoxelMeshPipeline {
 
         Ok(Self {
             program,
+            pick_program,
             vao,
             vbo,
             ebo,
@@ -652,12 +950,300 @@ impl VoxelMeshPipeline {
         }
     }
 
+    fn draw_editor_viewport(
+        &self,
+        gl: &glow::Context,
+        viewport: VoxelEditorViewport,
+        scene: &VoxelSceneRenderData,
+    ) {
+        if scene.vertices.is_empty() || scene.indices.is_empty() {
+            return;
+        }
+
+        let Some(mvp) = voxel_editor_view_projection(scene, viewport) else {
+            return;
+        };
+        let vertices = scene
+            .vertices
+            .iter()
+            .map(|vertex| VoxelMeshVertex {
+                x: vertex.position[0],
+                y: vertex.position[1],
+                z: vertex.position[2],
+                r: vertex.color[0],
+                g: vertex.color[1],
+                b: vertex.color[2],
+                a: vertex.color[3],
+            })
+            .collect::<Vec<_>>();
+
+        unsafe {
+            gl.clear_color(0.047, 0.063, 0.090, 1.0);
+            gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+            gl.enable(glow::DEPTH_TEST);
+            gl.depth_func(glow::LEQUAL);
+            gl.depth_mask(true);
+
+            gl.use_program(Some(self.program));
+            if let Some(location) = gl.get_uniform_location(self.program, "u_mvp") {
+                gl.uniform_matrix_4_f32_slice(Some(&location), false, &mvp.to_cols_array());
+            }
+
+            gl.bind_vertex_array(Some(self.vao));
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                cast_slice(&vertices),
+                glow::DYNAMIC_DRAW,
+            );
+            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(self.ebo));
+            gl.buffer_data_u8_slice(
+                glow::ELEMENT_ARRAY_BUFFER,
+                cast_slice(&scene.indices),
+                glow::DYNAMIC_DRAW,
+            );
+            gl.draw_elements(
+                glow::TRIANGLES,
+                scene.indices.len() as i32,
+                glow::UNSIGNED_INT,
+                0,
+            );
+            gl.bind_vertex_array(None);
+            gl.bind_buffer(glow::ARRAY_BUFFER, None);
+            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, None);
+            gl.use_program(None);
+            gl.disable(glow::DEPTH_TEST);
+        }
+    }
+
+    fn draw_pick(
+        &self,
+        gl: &glow::Context,
+        viewport: VoxelEditorViewport,
+        scene: &VoxelSceneRenderData,
+    ) {
+        if scene.vertices.is_empty() || scene.indices.is_empty() || scene.object_ranges.is_empty() {
+            return;
+        }
+
+        let Some(mvp) = voxel_editor_view_projection(scene, viewport) else {
+            return;
+        };
+        let vertices = scene
+            .vertices
+            .iter()
+            .map(|vertex| VoxelMeshVertex {
+                x: vertex.position[0],
+                y: vertex.position[1],
+                z: vertex.position[2],
+                r: vertex.color[0],
+                g: vertex.color[1],
+                b: vertex.color[2],
+                a: vertex.color[3],
+            })
+            .collect::<Vec<_>>();
+
+        unsafe {
+            gl.viewport(0, 0, viewport.width as i32, viewport.height as i32);
+            gl.clear_color(0.0, 0.0, 0.0, 0.0);
+            gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+            gl.enable(glow::DEPTH_TEST);
+            gl.depth_func(glow::LEQUAL);
+            gl.depth_mask(true);
+
+            gl.use_program(Some(self.pick_program));
+            if let Some(location) = gl.get_uniform_location(self.pick_program, "u_mvp") {
+                gl.uniform_matrix_4_f32_slice(Some(&location), false, &mvp.to_cols_array());
+            }
+
+            gl.bind_vertex_array(Some(self.vao));
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                cast_slice(&vertices),
+                glow::DYNAMIC_DRAW,
+            );
+            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(self.ebo));
+            gl.buffer_data_u8_slice(
+                glow::ELEMENT_ARRAY_BUFFER,
+                cast_slice(&scene.indices),
+                glow::DYNAMIC_DRAW,
+            );
+
+            for (index, range) in scene.object_ranges.iter().enumerate() {
+                if range.index_count == 0 {
+                    continue;
+                }
+                let color = encode_pick_id(index as u32 + 1);
+                if let Some(location) = gl.get_uniform_location(self.pick_program, "u_pick_color") {
+                    gl.uniform_4_f32(Some(&location), color[0], color[1], color[2], color[3]);
+                }
+                gl.draw_elements(
+                    glow::TRIANGLES,
+                    range.index_count as i32,
+                    glow::UNSIGNED_INT,
+                    (range.index_start as usize * std::mem::size_of::<u32>()) as i32,
+                );
+            }
+
+            gl.bind_vertex_array(None);
+            gl.bind_buffer(glow::ARRAY_BUFFER, None);
+            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, None);
+            gl.use_program(None);
+            gl.disable(glow::DEPTH_TEST);
+        }
+    }
+
     unsafe fn destroy(&self, gl: &glow::Context) {
         unsafe {
             gl.delete_program(self.program);
+            gl.delete_program(self.pick_program);
             gl.delete_vertex_array(self.vao);
             gl.delete_buffer(self.vbo);
             gl.delete_buffer(self.ebo);
+        }
+    }
+}
+
+struct VoxelPickFramebuffer {
+    framebuffer: glow::Framebuffer,
+    color_texture: glow::Texture,
+    depth_renderbuffer: glow::Renderbuffer,
+    width: u32,
+    height: u32,
+}
+
+impl VoxelPickFramebuffer {
+    fn new(gl: &glow::Context, width: u32, height: u32) -> anyhow::Result<Self> {
+        let framebuffer = unsafe { gl.create_framebuffer() }
+            .map_err(|e| anyhow::anyhow!("create voxel pick framebuffer: {e}"))?;
+        let color_texture = unsafe { gl.create_texture() }
+            .map_err(|e| anyhow::anyhow!("create voxel pick color texture: {e}"))?;
+        let depth_renderbuffer = unsafe { gl.create_renderbuffer() }
+            .map_err(|e| anyhow::anyhow!("create voxel pick depth renderbuffer: {e}"))?;
+        let mut buffer = Self {
+            framebuffer,
+            color_texture,
+            depth_renderbuffer,
+            width: 0,
+            height: 0,
+        };
+        buffer.ensure_size(gl, width, height)?;
+        Ok(buffer)
+    }
+
+    fn ensure_size(&mut self, gl: &glow::Context, width: u32, height: u32) -> anyhow::Result<()> {
+        let width = width.max(1);
+        let height = height.max(1);
+        if self.width == width && self.height == height {
+            return Ok(());
+        }
+
+        unsafe {
+            gl.bind_texture(glow::TEXTURE_2D, Some(self.color_texture));
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MIN_FILTER,
+                glow::NEAREST as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MAG_FILTER,
+                glow::NEAREST as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_WRAP_S,
+                glow::CLAMP_TO_EDGE as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_WRAP_T,
+                glow::CLAMP_TO_EDGE as i32,
+            );
+            gl.tex_image_2d(
+                glow::TEXTURE_2D,
+                0,
+                glow::RGBA as i32,
+                width as i32,
+                height as i32,
+                0,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelUnpackData::Slice(None),
+            );
+
+            gl.bind_renderbuffer(glow::RENDERBUFFER, Some(self.depth_renderbuffer));
+            gl.renderbuffer_storage(
+                glow::RENDERBUFFER,
+                glow::DEPTH_COMPONENT24,
+                width as i32,
+                height as i32,
+            );
+
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.framebuffer));
+            gl.framebuffer_texture_2d(
+                glow::FRAMEBUFFER,
+                glow::COLOR_ATTACHMENT0,
+                glow::TEXTURE_2D,
+                Some(self.color_texture),
+                0,
+            );
+            gl.framebuffer_renderbuffer(
+                glow::FRAMEBUFFER,
+                glow::DEPTH_ATTACHMENT,
+                glow::RENDERBUFFER,
+                Some(self.depth_renderbuffer),
+            );
+            let status = gl.check_framebuffer_status(glow::FRAMEBUFFER);
+            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            gl.bind_renderbuffer(glow::RENDERBUFFER, None);
+            gl.bind_texture(glow::TEXTURE_2D, None);
+            if status != glow::FRAMEBUFFER_COMPLETE {
+                anyhow::bail!("voxel pick framebuffer incomplete: status={status:#x}");
+            }
+        }
+
+        self.width = width;
+        self.height = height;
+        Ok(())
+    }
+
+    fn bind_for_render(&self, gl: &glow::Context) {
+        unsafe {
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.framebuffer));
+            gl.viewport(0, 0, self.width as i32, self.height as i32);
+        }
+    }
+
+    fn read_pixel(&self, gl: &glow::Context, x: u32, y: u32) -> [u8; 4] {
+        let mut pixel = [0_u8; 4];
+        let read_y = self.height.saturating_sub(1).saturating_sub(y);
+        unsafe {
+            gl.read_pixels(
+                x.min(self.width.saturating_sub(1)) as i32,
+                read_y as i32,
+                1,
+                1,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelPackData::Slice(Some(&mut pixel)),
+            );
+        }
+        pixel
+    }
+
+    fn unbind(&self, gl: &glow::Context) {
+        unsafe {
+            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+        }
+    }
+
+    unsafe fn destroy(&self, gl: &glow::Context) {
+        unsafe {
+            gl.delete_framebuffer(self.framebuffer);
+            gl.delete_texture(self.color_texture);
+            gl.delete_renderbuffer(self.depth_renderbuffer);
         }
     }
 }
@@ -2648,5 +3234,21 @@ in vec4 v_color;
 out vec4 frag_color;
 void main() {
     frag_color = v_color;
+}
+"#;
+
+const VOXEL_PICK_VERTEX_SHADER: &str = r#"#version 330 core
+layout (location = 0) in vec3 a_position;
+uniform mat4 u_mvp;
+void main() {
+    gl_Position = u_mvp * vec4(a_position, 1.0);
+}
+"#;
+
+const VOXEL_PICK_FRAGMENT_SHADER: &str = r#"#version 330 core
+uniform vec4 u_pick_color;
+out vec4 frag_color;
+void main() {
+    frag_color = u_pick_color;
 }
 "#;

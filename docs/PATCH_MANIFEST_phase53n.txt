@@ -1,0 +1,12 @@
+Phase 53n overlay patch
+=======================
+
+Apply after:
+1. Starlight_Ridge_phase53l_voxel_composition_3d_selection_transform_handles.zip
+2. Starlight_Ridge_phase53m_patch_overlay_voxel_composition_3d_connection_editing_snap_preview.zip
+3. Starlight_Ridge_phase53m_1_compile_fix_duplicate_instance_borrow.zip
+
+Changed files:
+- crates/app/src/egui_editor.rs
+- docs/PHASE53N_VOXEL_COMPOSITION_3D_ROTATION_MIRROR_CONSTRAINTS.md
+- docs/PATCH_MANIFEST_phase53n.txt

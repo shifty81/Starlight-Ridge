@@ -1,14 +1,20 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
+use editor_data_bridge::EditorContentPaths;
 use editor_undo::UndoStack;
 use eframe::egui;
+use egui_glow::glow::HasContext;
 use engine_assets::vox::{VoxAssetInfo, VoxModel, load_vox_file, scan_vox_files};
-use engine_render_gl::{TileInstance, TileMapRenderData};
+use engine_render_gl::{
+    TileInstance, TileMapRenderData, VoxelEditorGlowRenderer, VoxelEditorPickResult,
+    VoxelEditorViewport, VoxelSceneRenderData, pick_voxel_object_by_projected_bounds,
+};
 use game_data::defs::{
     LayerLegendEntry, MapLayersDef, TileLayerDef, TilesetDef, VoxelPanelBakedInstanceDef,
     VoxelPanelBakedVoxelDef, VoxelPanelCellDef, VoxelPanelCompositionConnectionDef,
@@ -25,7 +31,11 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     EDITOR_COLLISION_CYCLE, EDITOR_ROLE_CYCLE, TileRoleState, build_tile_map_render_data,
-    load_tile_role_state, locate_project_root, save_tile_role_state,
+    build_voxel_scene_render_data, load_tile_role_state, locate_project_root, save_tile_role_state,
+    voxel_scene::{
+        ScenePivotMode, SceneVoxelPreviewEntry, SceneVoxelPreviewState,
+        load_scene_voxel_preview_state,
+    },
     write_editor_live_preview_manifest,
 };
 
@@ -52,6 +62,7 @@ enum LeftTab {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RightTab {
     Tile,
+    Validation,
     Seams,
     Export,
 }
@@ -94,6 +105,7 @@ enum WorldSubTab {
     MapPaint,
     Layers,
     Objects,
+    Scene3d,
     TerrainRules,
 }
 
@@ -178,8 +190,28 @@ enum EditorSelection {
     Spawn,
     Trigger,
     VoxelObject,
+    SceneVoxelObject,
     PixelSelection,
     VoxelPanelSelection,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Scene3dTool {
+    Orbit,
+    MoveVoxel,
+    ResizeVoxel,
+    HeightVoxel,
+}
+
+impl Scene3dTool {
+    fn label(self) -> &'static str {
+        match self {
+            Scene3dTool::Orbit => "Orbit",
+            Scene3dTool::MoveVoxel => "Move voxel",
+            Scene3dTool::ResizeVoxel => "Resize voxel",
+            Scene3dTool::HeightVoxel => "Height voxel",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1002,6 +1034,32 @@ enum WorldPlacementKind {
     VoxelObject,
 }
 
+#[derive(Debug, Clone)]
+struct ValidationIssue {
+    id: String,
+    category: &'static str,
+    severity: ValidationSeverity,
+    message: String,
+    source_path: Option<PathBuf>,
+    target: Option<ValidationTarget>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ValidationSeverity {
+    Error,
+    Warning,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ValidationTarget {
+    Layer(String),
+    Prop(String),
+    Spawn(String),
+    Trigger(String),
+    VoxelObject(String),
+    SceneVoxelObject(String),
+}
+
 impl WorldPlacementState {
     fn load(project_root: &std::path::Path, map_id: &str) -> anyhow::Result<Self> {
         let props_path = map_content_path(project_root, map_id, "props.ron");
@@ -1613,6 +1671,64 @@ impl Default for VoxelPanelPreviewCameraState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VoxelPanelTransformAxis {
+    X,
+    Y,
+    Z,
+}
+
+impl VoxelPanelTransformAxis {
+    fn label(self) -> &'static str {
+        match self {
+            VoxelPanelTransformAxis::X => "X",
+            VoxelPanelTransformAxis::Y => "Y",
+            VoxelPanelTransformAxis::Z => "Z",
+        }
+    }
+
+    fn color(self) -> egui::Color32 {
+        match self {
+            VoxelPanelTransformAxis::X => egui::Color32::from_rgb(232, 96, 96),
+            VoxelPanelTransformAxis::Y => egui::Color32::from_rgb(100, 214, 128),
+            VoxelPanelTransformAxis::Z => egui::Color32::from_rgb(102, 174, 255),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VoxelPanelPreviewHitKind {
+    Instance,
+    Socket,
+    TranslateHandle,
+    RotateHandle,
+    Connection,
+}
+
+#[derive(Debug, Clone)]
+struct VoxelPanelPreviewHit {
+    kind: VoxelPanelPreviewHitKind,
+    instance_id: String,
+    socket_id: Option<String>,
+    connection_id: Option<String>,
+    transform_axis: Option<VoxelPanelTransformAxis>,
+    label: String,
+    distance: f32,
+}
+
+#[derive(Debug, Clone)]
+struct VoxelPanelPreviewDragState {
+    instance_id: String,
+    axis: VoxelPanelTransformAxis,
+    start_origin: [i32; 3],
+}
+
+#[derive(Debug, Clone)]
+struct VoxelPanelConnectionDraftState {
+    from_instance_id: String,
+    from_socket_id: String,
+}
+
 #[derive(Debug, Clone)]
 struct VoxelPanelDesignerState {
     kit_paths: Vec<PathBuf>,
@@ -1639,9 +1755,14 @@ struct VoxelPanelDesignerState {
     preview_3d_export_path: Option<PathBuf>,
     preview_export_paths: Vec<PathBuf>,
     selected_preview_export_index: usize,
+    preview_hover_hit: Option<VoxelPanelPreviewHit>,
+    preview_drag: Option<VoxelPanelPreviewDragState>,
+    preview_connection_draft: Option<VoxelPanelConnectionDraftState>,
+    transform_grid_snap: i32,
     last_mesh_export_summary: Option<String>,
     last_mesh_export_path: Option<PathBuf>,
     panel_undo: UndoStack<Vec<VoxelPanelDef>>,
+    composition_undo: UndoStack<Vec<VoxelPanelCompositionSceneDef>>,
 }
 
 impl VoxelPanelDesignerState {
@@ -1689,9 +1810,14 @@ impl VoxelPanelDesignerState {
             preview_3d_export_path: None,
             preview_export_paths: Vec::new(),
             selected_preview_export_index: 0,
+            preview_hover_hit: None,
+            preview_drag: None,
+            preview_connection_draft: None,
+            transform_grid_snap: 1,
             last_mesh_export_summary: None,
             last_mesh_export_path: None,
             panel_undo: UndoStack::new(60),
+            composition_undo: UndoStack::new(80),
         };
         state.normalize_selection();
         state.refresh_preview_export_history(project_root);
@@ -1734,45 +1860,21 @@ impl VoxelPanelDesignerState {
         self.preview_3d_export_path = None;
         self.preview_export_paths.clear();
         self.selected_preview_export_index = 0;
+        self.preview_hover_hit = None;
+        self.preview_drag = None;
+        self.preview_connection_draft = None;
         self.last_mesh_export_summary = None;
         self.last_mesh_export_path = None;
+        self.composition_undo.clear();
         self.normalize_selection();
         Ok(())
     }
 
     fn save_with_backup(&mut self) -> anyhow::Result<Option<PathBuf>> {
-        if let Some(parent) = self.kit_path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create {}", parent.display()))?;
-        }
-
-        let backup_path = if self.kit_path.exists() {
-            let timestamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|duration| duration.as_secs())
-                .unwrap_or(0);
-            let backup_path = self.kit_path.with_file_name(format!(
-                "{}.phase53i.{}.bak.ron",
-                self.kit_path
-                    .file_stem()
-                    .and_then(|stem| stem.to_str())
-                    .unwrap_or("voxel_panel_kit"),
-                timestamp
-            ));
-            std::fs::copy(&self.kit_path, &backup_path).with_context(|| {
-                format!(
-                    "failed to create voxel panel kit backup {}",
-                    backup_path.display()
-                )
-            })?;
-            Some(backup_path)
-        } else {
-            None
-        };
-
-        game_data::loader::save_ron_file(&self.kit_path, &self.kit)?;
+        let outcome =
+            editor_data_bridge::save_ron_with_backup(&self.kit_path, &self.kit, "phase53i")?;
         self.dirty = false;
-        Ok(backup_path)
+        Ok(outcome.backup_path)
     }
 
     fn normalize_selection(&mut self) {
@@ -1871,6 +1973,582 @@ impl VoxelPanelDesignerState {
     ) -> Option<&mut VoxelPanelCompositionInstanceDef> {
         let index = self.selected_composition_instance_index;
         self.selected_composition_mut()?.instances.get_mut(index)
+    }
+
+    fn selected_composition_connection(&self) -> Option<&VoxelPanelCompositionConnectionDef> {
+        self.selected_composition()?
+            .connections
+            .get(self.selected_composition_connection_index)
+    }
+
+    fn selected_composition_instance_origin(&self) -> Option<[i32; 3]> {
+        self.selected_composition_instance()
+            .map(|instance| [instance.x, instance.y, instance.z])
+    }
+
+    fn sync_selected_panel_to_selected_composition_instance(&mut self) -> bool {
+        let Some(panel_id) = self
+            .selected_composition_instance()
+            .map(|instance| instance.panel_id.clone())
+        else {
+            return false;
+        };
+        if let Some(panel_index) = self
+            .kit
+            .panels
+            .iter()
+            .position(|panel| panel.id == panel_id)
+        {
+            self.selected_panel_index = panel_index;
+            self.selected_socket_index = self
+                .selected_socket_index
+                .min(self.kit.panels[panel_index].sockets.len().saturating_sub(1));
+            return true;
+        }
+        false
+    }
+
+    fn select_composition_instance_by_id(&mut self, instance_id: &str) -> bool {
+        let Some(composition) = self.selected_composition() else {
+            return false;
+        };
+        let Some(index) = composition
+            .instances
+            .iter()
+            .position(|instance| instance.id == instance_id)
+        else {
+            return false;
+        };
+        self.selected_composition_instance_index = index;
+        self.sync_selected_panel_to_selected_composition_instance();
+        true
+    }
+
+    fn select_composition_socket_by_id(&mut self, instance_id: &str, socket_id: &str) -> bool {
+        if !self.select_composition_instance_by_id(instance_id) {
+            return false;
+        }
+        let Some(instance) = self.selected_composition_instance().cloned() else {
+            return false;
+        };
+        let Some(panel_index) = self
+            .kit
+            .panels
+            .iter()
+            .position(|panel| panel.id == instance.panel_id)
+        else {
+            return false;
+        };
+        self.selected_panel_index = panel_index;
+        if let Some(socket_index) = self.kit.panels[panel_index]
+            .sockets
+            .iter()
+            .position(|socket| socket.id == socket_id)
+        {
+            self.selected_socket_index = socket_index;
+            return true;
+        }
+        false
+    }
+
+    fn push_composition_undo(&mut self, label: impl Into<String>) {
+        self.composition_undo.push(label, &self.kit.compositions);
+    }
+
+    fn undo_compositions(&mut self) -> Option<String> {
+        let result = self
+            .composition_undo
+            .undo("redo composition edit", &self.kit.compositions)?;
+        self.kit.compositions = result.value;
+        self.dirty = true;
+        self.preview_drag = None;
+        self.preview_hover_hit = None;
+        self.normalize_selection();
+        self.preview_connection_draft = None;
+        let _ = self.refresh_live_preview_from_composition();
+        Some(result.label)
+    }
+
+    fn redo_compositions(&mut self) -> Option<String> {
+        let result = self
+            .composition_undo
+            .redo("undo composition edit", &self.kit.compositions)?;
+        self.kit.compositions = result.value;
+        self.dirty = true;
+        self.preview_drag = None;
+        self.preview_hover_hit = None;
+        self.normalize_selection();
+        self.preview_connection_draft = None;
+        let _ = self.refresh_live_preview_from_composition();
+        Some(result.label)
+    }
+
+    fn set_selected_composition_instance_origin(&mut self, origin: [i32; 3]) -> bool {
+        let Some(composition) = self.selected_composition() else {
+            return false;
+        };
+        let canvas_width = composition.canvas_width as i32;
+        let canvas_height = composition.canvas_height as i32;
+        let canvas_depth = composition.canvas_depth as i32;
+        let Some(instance_snapshot) = self.selected_composition_instance().cloned() else {
+            return false;
+        };
+        let panel_extent = self
+            .panel_by_id(&instance_snapshot.panel_id)
+            .map(|panel| {
+                let rotated =
+                    voxel_panel_normalized_rotation(instance_snapshot.rotation_degrees) % 180 != 0;
+                let width = if rotated { panel.height } else { panel.width } as i32;
+                let height = if rotated { panel.width } else { panel.height } as i32;
+                [width.max(1), height.max(1), panel.depth.max(1) as i32]
+            })
+            .unwrap_or([1, 1, 1]);
+        let Some(instance) = self.selected_composition_instance_mut() else {
+            return false;
+        };
+        if instance.locked {
+            return false;
+        }
+
+        let max_x = canvas_width.saturating_sub(panel_extent[0]).max(0);
+        let max_y = canvas_height.saturating_sub(panel_extent[1]).max(0);
+        let max_z = canvas_depth.saturating_sub(panel_extent[2]).max(0);
+        let next_x = origin[0].clamp(0, max_x);
+        let next_y = origin[1].clamp(0, max_y);
+        let next_z = origin[2].clamp(0, max_z);
+        if instance.x == next_x && instance.y == next_y && instance.z == next_z {
+            return false;
+        }
+
+        instance.x = next_x;
+        instance.y = next_y;
+        instance.z = next_z;
+        self.dirty = true;
+        true
+    }
+
+    fn translate_selected_composition_instance(
+        &mut self,
+        axis: VoxelPanelTransformAxis,
+        amount: i32,
+        start_origin: [i32; 3],
+    ) -> bool {
+        let mut next = start_origin;
+        match axis {
+            VoxelPanelTransformAxis::X => next[0] = next[0].saturating_add(amount),
+            VoxelPanelTransformAxis::Y => next[1] = next[1].saturating_add(amount),
+            VoxelPanelTransformAxis::Z => next[2] = next[2].saturating_add(amount),
+        }
+        self.set_selected_composition_instance_origin(next)
+    }
+
+    fn selected_composition_socket_key(&self) -> Option<(String, String)> {
+        let instance = self.selected_composition_instance()?;
+        let panel = self.panel_by_id(&instance.panel_id)?;
+        let socket = panel.sockets.get(self.selected_socket_index)?;
+        Some((instance.id.clone(), socket.id.clone()))
+    }
+
+    fn begin_preview_connection_from_selected_socket(&mut self) -> Result<String, String> {
+        let Some((instance_id, socket_id)) = self.selected_composition_socket_key() else {
+            return Err("Select a socket before starting a 3D connection draft.".to_string());
+        };
+        self.begin_preview_connection_from_socket(&instance_id, &socket_id)
+    }
+
+    fn begin_preview_connection_from_socket(
+        &mut self,
+        instance_id: &str,
+        socket_id: &str,
+    ) -> Result<String, String> {
+        if !self.select_composition_socket_by_id(instance_id, socket_id) {
+            return Err(format!(
+                "Could not select socket '{}.{}'.",
+                instance_id, socket_id
+            ));
+        }
+        self.preview_connection_draft = Some(VoxelPanelConnectionDraftState {
+            from_instance_id: instance_id.to_string(),
+            from_socket_id: socket_id.to_string(),
+        });
+        Ok(format!(
+            "Started 3D connection draft from '{}.{}'.",
+            instance_id, socket_id
+        ))
+    }
+
+    fn clear_preview_connection_draft(&mut self) {
+        self.preview_connection_draft = None;
+    }
+
+    fn add_connection_between_sockets(
+        &mut self,
+        from_instance_id: &str,
+        from_socket_id: &str,
+        to_instance_id: &str,
+        to_socket_id: &str,
+    ) -> Result<String, String> {
+        if from_instance_id == to_instance_id && from_socket_id == to_socket_id {
+            return Err("Cannot connect a socket to itself.".to_string());
+        }
+        let composition_snapshot = self
+            .selected_composition()
+            .cloned()
+            .ok_or_else(|| "No composition scene selected.".to_string())?;
+        let from_instance = composition_snapshot
+            .instances
+            .iter()
+            .find(|instance| instance.id == from_instance_id)
+            .cloned()
+            .ok_or_else(|| format!("Missing source instance '{}'.", from_instance_id))?;
+        let to_instance = composition_snapshot
+            .instances
+            .iter()
+            .find(|instance| instance.id == to_instance_id)
+            .cloned()
+            .ok_or_else(|| format!("Missing target instance '{}'.", to_instance_id))?;
+        let from_panel = self
+            .panel_by_id(&from_instance.panel_id)
+            .cloned()
+            .ok_or_else(|| format!("Missing source panel '{}'.", from_instance.panel_id))?;
+        let to_panel = self
+            .panel_by_id(&to_instance.panel_id)
+            .cloned()
+            .ok_or_else(|| format!("Missing target panel '{}'.", to_instance.panel_id))?;
+        let from_socket = from_panel
+            .sockets
+            .iter()
+            .find(|socket| socket.id == from_socket_id)
+            .cloned()
+            .ok_or_else(|| format!("Missing source socket '{}'.", from_socket_id))?;
+        let to_socket = to_panel
+            .sockets
+            .iter()
+            .find(|socket| socket.id == to_socket_id)
+            .cloned()
+            .ok_or_else(|| format!("Missing target socket '{}'.", to_socket_id))?;
+
+        if !voxel_panel_sockets_compatible(&from_panel, &from_socket, &to_panel, &to_socket) {
+            return Err(format!(
+                "Socket '{}.{}' does not accept '{}.{}'.",
+                from_instance_id, from_socket_id, to_instance_id, to_socket_id
+            ));
+        }
+
+        let from_world =
+            voxel_panel_socket_world_position(&from_panel, &from_instance, &from_socket);
+        let to_world = voxel_panel_socket_world_position(&to_panel, &to_instance, &to_socket);
+        let offset = [
+            to_world.0 - from_world.0,
+            to_world.1 - from_world.1,
+            to_world.2 - from_world.2,
+        ];
+        let snapped = offset == [0, 0, 0];
+        let mut connection_id = format!(
+            "{}_{}_to_{}_{}",
+            from_instance_id, from_socket_id, to_instance_id, to_socket_id
+        );
+        let selected_connection_index = {
+            let composition = self
+                .selected_composition_mut()
+                .ok_or_else(|| "No composition scene selected.".to_string())?;
+            composition.connections.retain(|connection| {
+                !(connection.from_instance == from_instance_id
+                    && connection.from_socket == from_socket_id
+                    && connection.to_instance == to_instance_id
+                    && connection.to_socket == to_socket_id)
+            });
+            if composition
+                .connections
+                .iter()
+                .any(|connection| connection.id == connection_id)
+            {
+                let suffix = composition.connections.len() + 1;
+                connection_id = format!("{connection_id}_{suffix:02}");
+            }
+            composition
+                .connections
+                .push(VoxelPanelCompositionConnectionDef {
+                    id: connection_id.clone(),
+                    from_instance: from_instance_id.to_string(),
+                    from_socket: from_socket_id.to_string(),
+                    to_instance: to_instance_id.to_string(),
+                    to_socket: to_socket_id.to_string(),
+                    snapped,
+                    offset,
+                });
+            composition.connections.len().saturating_sub(1)
+        };
+        self.selected_composition_connection_index = selected_connection_index;
+        self.preview_connection_draft = None;
+        self.dirty = true;
+        self.refresh_live_preview_from_composition()?;
+        Ok(format!(
+            "Created 3D connection '{}'{}.",
+            connection_id,
+            if snapped {
+                " (snapped)"
+            } else {
+                " (offset preview)"
+            }
+        ))
+    }
+
+    fn duplicate_selected_composition_instance_3d(&mut self) -> Result<String, String> {
+        let selected_index = self.selected_composition_instance_index;
+        let snap = self.transform_grid_snap.max(1);
+        let source = self
+            .selected_composition()
+            .and_then(|composition| composition.instances.get(selected_index))
+            .cloned()
+            .ok_or_else(|| "No selected composition instance to duplicate.".to_string())?;
+        let mut duplicate = source.clone();
+        let duplicated_origin = [
+            source.x.saturating_add(snap),
+            source.y.saturating_add(snap),
+            source.z,
+        ];
+        duplicate.locked = false;
+        duplicate.x = duplicated_origin[0];
+        duplicate.y = duplicated_origin[1];
+        duplicate.z = duplicated_origin[2];
+
+        let (new_index, instance_id) = {
+            let composition = self
+                .selected_composition_mut()
+                .ok_or_else(|| "No composition scene selected.".to_string())?;
+            let mut suffix = composition.instances.len() + 1;
+            loop {
+                duplicate.id = format!("{}_copy_{suffix:02}", source.id);
+                if !composition
+                    .instances
+                    .iter()
+                    .any(|instance| instance.id == duplicate.id)
+                {
+                    break;
+                }
+                suffix += 1;
+            }
+            composition.instances.push(duplicate);
+            let new_index = composition.instances.len().saturating_sub(1);
+            let instance_id = composition.instances[new_index].id.clone();
+            (new_index, instance_id)
+        };
+
+        self.selected_composition_instance_index = new_index;
+        self.preview_connection_draft = None;
+        self.dirty = true;
+        self.normalize_selection();
+        self.refresh_live_preview_from_composition()?;
+        Ok(format!(
+            "Duplicated 3D selected instance as '{}'.",
+            instance_id
+        ))
+    }
+
+    fn remove_selected_composition_instance_3d(&mut self) -> Result<String, String> {
+        let removed_id = self
+            .selected_composition_instance()
+            .map(|instance| instance.id.clone())
+            .ok_or_else(|| "No selected composition instance to delete.".to_string())?;
+        self.remove_selected_composition_instance()
+            .ok_or_else(|| "Could not remove selected composition instance.".to_string())?;
+        self.preview_connection_draft = None;
+        self.dirty = true;
+        self.refresh_live_preview_from_composition()?;
+        Ok(format!("Deleted 3D selected instance '{}'.", removed_id))
+    }
+
+    fn nudge_selected_composition_instance_3d(
+        &mut self,
+        axis: VoxelPanelTransformAxis,
+        amount: i32,
+    ) -> Result<String, String> {
+        let start_origin = self
+            .selected_composition_instance_origin()
+            .ok_or_else(|| "No selected composition instance to nudge.".to_string())?;
+        self.push_composition_undo(format!("3D keyboard nudge {}", axis.label()));
+        if !self.translate_selected_composition_instance(axis, amount, start_origin) {
+            return Err(
+                "Selected instance could not move, likely due to bounds or lock constraints."
+                    .to_string(),
+            );
+        }
+        self.refresh_live_preview_from_composition()?;
+        Ok(format!(
+            "Nudged selected instance {} by {} cell(s).",
+            axis.label(),
+            amount
+        ))
+    }
+
+    fn select_composition_connection_by_id(&mut self, connection_id: &str) -> bool {
+        let Some(index) = self.selected_composition().and_then(|composition| {
+            composition
+                .connections
+                .iter()
+                .position(|connection| connection.id == connection_id)
+        }) else {
+            return false;
+        };
+        self.selected_composition_connection_index = index;
+        true
+    }
+
+    fn remove_selected_composition_connection_3d(&mut self) -> Result<String, String> {
+        let selected_index = self.selected_composition_connection_index;
+        let (removed_id, next_connection_index) = {
+            let composition = self
+                .selected_composition_mut()
+                .ok_or_else(|| "No composition scene selected.".to_string())?;
+            if composition.connections.is_empty() {
+                return Err("No selected 3D connection to delete.".to_string());
+            }
+            let remove_index = selected_index.min(composition.connections.len().saturating_sub(1));
+            let removed = composition.connections.remove(remove_index);
+            let next_connection_index =
+                remove_index.min(composition.connections.len().saturating_sub(1));
+            (removed.id, next_connection_index)
+        };
+        self.selected_composition_connection_index = next_connection_index;
+        self.preview_connection_draft = None;
+        self.dirty = true;
+        self.refresh_live_preview_from_composition()?;
+        Ok(format!("Deleted 3D connection '{}'.", removed_id))
+    }
+
+    fn rotate_selected_composition_instance_3d(
+        &mut self,
+        clockwise: bool,
+    ) -> Result<String, String> {
+        let Some(instance) = self.selected_composition_instance_mut() else {
+            return Err("No selected composition instance to rotate.".to_string());
+        };
+        if instance.locked {
+            return Err(format!(
+                "Instance '{}' is locked and cannot rotate.",
+                instance.id
+            ));
+        }
+        let delta = if clockwise { 90 } else { -90 };
+        instance.rotation_degrees =
+            voxel_panel_normalized_rotation(instance.rotation_degrees + delta);
+        let instance_id = instance.id.clone();
+        self.dirty = true;
+        self.normalize_selected_instance_to_bounds();
+        self.refresh_live_preview_from_composition()?;
+        Ok(format!(
+            "Rotated selected instance '{}' {} to {}°.",
+            instance_id,
+            if clockwise {
+                "clockwise"
+            } else {
+                "counter-clockwise"
+            },
+            self.selected_composition_instance()
+                .map(|instance| voxel_panel_normalized_rotation(instance.rotation_degrees))
+                .unwrap_or(0)
+        ))
+    }
+
+    fn toggle_selected_composition_instance_mirror_3d(
+        &mut self,
+        mirror_x: bool,
+    ) -> Result<String, String> {
+        let Some(instance) = self.selected_composition_instance_mut() else {
+            return Err("No selected composition instance to mirror.".to_string());
+        };
+        if instance.locked {
+            return Err(format!(
+                "Instance '{}' is locked and cannot mirror.",
+                instance.id
+            ));
+        }
+        if mirror_x {
+            instance.mirror_x = !instance.mirror_x;
+        } else {
+            instance.mirror_y = !instance.mirror_y;
+        }
+        let instance_id = instance.id.clone();
+        let enabled = if mirror_x {
+            instance.mirror_x
+        } else {
+            instance.mirror_y
+        };
+        self.dirty = true;
+        self.refresh_live_preview_from_composition()?;
+        Ok(format!(
+            "{} mirror {} for selected instance '{}'.",
+            if enabled { "Enabled" } else { "Disabled" },
+            if mirror_x { "X" } else { "Y" },
+            instance_id
+        ))
+    }
+
+    fn normalize_selected_instance_to_bounds(&mut self) {
+        let Some(selected_index) = self.selected_composition().map(|composition| {
+            self.selected_composition_instance_index
+                .min(composition.instances.len().saturating_sub(1))
+        }) else {
+            return;
+        };
+        let Some((canvas_width, canvas_height, canvas_depth, panel_id)) =
+            self.selected_composition().and_then(|composition| {
+                composition.instances.get(selected_index).map(|instance| {
+                    (
+                        composition.canvas_width as i32,
+                        composition.canvas_height as i32,
+                        composition.canvas_depth as i32,
+                        instance.panel_id.clone(),
+                    )
+                })
+            })
+        else {
+            return;
+        };
+        let Some(panel) = self.panel_by_id(&panel_id).cloned() else {
+            return;
+        };
+        let Some(instance) = self.selected_composition_instance_mut() else {
+            return;
+        };
+        let (width, height) = voxel_panel_instance_size(&panel, instance);
+        let max_x = canvas_width.saturating_sub(width as i32).max(0);
+        let max_y = canvas_height.saturating_sub(height as i32).max(0);
+        let max_z = canvas_depth.saturating_sub(panel.depth as i32).max(0);
+        instance.x = instance.x.clamp(0, max_x);
+        instance.y = instance.y.clamp(0, max_y);
+        instance.z = instance.z.clamp(0, max_z);
+    }
+
+    fn preview_overlap_diagnostics_messages(
+        &self,
+        export: &VoxelPanelCompositionMeshExportDef,
+    ) -> Vec<String> {
+        let mut messages = Vec::new();
+        for (index, a) in export.instances.iter().enumerate() {
+            for b in export.instances.iter().skip(index + 1) {
+                if voxel_panel_instance_bounds_overlap(a, b) {
+                    messages.push(format!(
+                        "Instance overlap: '{}' bounds {:?}..{:?} intersects '{}' bounds {:?}..{:?}.",
+                        a.instance_id,
+                        a.bounds_min,
+                        a.bounds_max,
+                        b.instance_id,
+                        b.bounds_min,
+                        b.bounds_max
+                    ));
+                }
+            }
+        }
+        messages
+    }
+
+    fn refresh_live_preview_from_composition(&mut self) -> Result<(), String> {
+        let export = self.bake_selected_composition_mesh_export()?;
+        self.preview_3d_export = Some(export);
+        self.preview_3d_export_path = None;
+        Ok(())
     }
 
     fn selected_palette(&self) -> Option<&VoxelPanelPaletteDef> {
@@ -2927,8 +3605,12 @@ impl VoxelPanelDesignerState {
             }
         }
 
+        for message in self.preview_overlap_diagnostics_messages(export) {
+            messages.push(message);
+        }
+
         if messages.is_empty() {
-            messages.push("Preview diagnostics passed: no missing materials, invalid connections, or disconnected required sockets found.".to_string());
+            messages.push("Preview diagnostics passed: no missing materials, invalid connections, disconnected required sockets, or overlapping instance bounds found.".to_string());
         }
         messages
     }
@@ -3470,6 +4152,18 @@ fn voxel_panel_instance_size(
     }
 }
 
+fn voxel_panel_instance_bounds_overlap(
+    a: &VoxelPanelBakedInstanceDef,
+    b: &VoxelPanelBakedInstanceDef,
+) -> bool {
+    a.bounds_min[0] <= b.bounds_max[0]
+        && a.bounds_max[0] >= b.bounds_min[0]
+        && a.bounds_min[1] <= b.bounds_max[1]
+        && a.bounds_max[1] >= b.bounds_min[1]
+        && a.bounds_min[2] <= b.bounds_max[2]
+        && a.bounds_max[2] >= b.bounds_min[2]
+}
+
 fn voxel_panel_socket_accepts(
     socket: &VoxelPanelSocketDef,
     other_panel: &VoxelPanelDef,
@@ -3776,6 +4470,136 @@ fn voxel_panel_socket_gizmo_accepts(
     })
 }
 
+fn voxel_panel_preview_find_socket_gizmo<'a>(
+    export: &'a VoxelPanelCompositionMeshExportDef,
+    instance_id: &str,
+    socket_id: &str,
+) -> Option<&'a VoxelPanelSocketGizmoDef> {
+    export
+        .socket_gizmos
+        .iter()
+        .find(|socket| socket.instance_id == instance_id && socket.socket_id == socket_id)
+}
+
+fn voxel_panel_preview_socket_pair_valid(
+    export: &VoxelPanelCompositionMeshExportDef,
+    from_instance_id: &str,
+    from_socket_id: &str,
+    to_instance_id: &str,
+    to_socket_id: &str,
+) -> bool {
+    if from_instance_id == to_instance_id && from_socket_id == to_socket_id {
+        return false;
+    }
+    let Some(from_socket) =
+        voxel_panel_preview_find_socket_gizmo(export, from_instance_id, from_socket_id)
+    else {
+        return false;
+    };
+    let Some(to_socket) =
+        voxel_panel_preview_find_socket_gizmo(export, to_instance_id, to_socket_id)
+    else {
+        return false;
+    };
+    voxel_panel_socket_gizmo_accepts(from_socket, to_socket)
+        || voxel_panel_socket_gizmo_accepts(to_socket, from_socket)
+        || (!from_socket.accepts.is_empty() && from_socket.accepts == to_socket.accepts)
+}
+
+fn voxel_panel_preview_connection_gizmo_valid(
+    export: &VoxelPanelCompositionMeshExportDef,
+    connection: &VoxelPanelConnectionGizmoDef,
+) -> bool {
+    voxel_panel_preview_socket_pair_valid(
+        export,
+        &connection.from_instance,
+        &connection.from_socket,
+        &connection.to_instance,
+        &connection.to_socket,
+    )
+}
+
+fn voxel_panel_draw_preview_connection_draft(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    export: &VoxelPanelCompositionMeshExportDef,
+    camera: &VoxelPanelPreviewCameraState,
+    draft: &VoxelPanelConnectionDraftState,
+    hover_hit: Option<&VoxelPanelPreviewHit>,
+    hover_pos: Option<egui::Pos2>,
+) {
+    let center = voxel_panel_preview_center(export);
+    let Some(from_socket) = voxel_panel_preview_find_socket_gizmo(
+        export,
+        &draft.from_instance_id,
+        &draft.from_socket_id,
+    ) else {
+        return;
+    };
+    let from_pos = voxel_panel_project_preview_point(
+        voxel_panel_preview_world_point(from_socket.world, 0.5, 0.5, 0.5, export),
+        center,
+        camera,
+        rect,
+    );
+    let mut end_pos = hover_pos.unwrap_or(from_pos);
+    let mut stroke = egui::Stroke::new(2.0, egui::Color32::from_rgb(112, 192, 255));
+    let mut target_label = "pick target socket".to_string();
+
+    if let Some(hit) = hover_hit {
+        if let Some(target_socket_id) = &hit.socket_id {
+            if let Some(to_socket) =
+                voxel_panel_preview_find_socket_gizmo(export, &hit.instance_id, target_socket_id)
+            {
+                end_pos = voxel_panel_project_preview_point(
+                    voxel_panel_preview_world_point(to_socket.world, 0.5, 0.5, 0.5, export),
+                    center,
+                    camera,
+                    rect,
+                );
+                let valid = voxel_panel_preview_socket_pair_valid(
+                    export,
+                    &draft.from_instance_id,
+                    &draft.from_socket_id,
+                    &hit.instance_id,
+                    target_socket_id,
+                );
+                stroke = if valid {
+                    egui::Stroke::new(3.0, egui::Color32::from_rgb(126, 196, 137))
+                } else {
+                    egui::Stroke::new(3.0, egui::Color32::from_rgb(238, 96, 96))
+                };
+                let offset = [
+                    to_socket.world[0] - from_socket.world[0],
+                    to_socket.world[1] - from_socket.world[1],
+                    to_socket.world[2] - from_socket.world[2],
+                ];
+                let snapped = offset == [0, 0, 0];
+                target_label = format!(
+                    "{} target · snap ghost offset {:?}{}",
+                    if valid { "valid" } else { "invalid" },
+                    offset,
+                    if snapped { " · snapped" } else { "" }
+                );
+            }
+        }
+    }
+
+    painter.line_segment([from_pos, end_pos], stroke);
+    painter.circle_stroke(from_pos, 8.0, stroke);
+    painter.circle_filled(end_pos, 5.0, stroke.color);
+    painter.text(
+        from_pos + egui::vec2(8.0, 8.0),
+        egui::Align2::LEFT_TOP,
+        format!(
+            "connect {}.{} → {}",
+            draft.from_instance_id, draft.from_socket_id, target_label
+        ),
+        egui::FontId::monospace(10.0),
+        stroke.color,
+    );
+}
+
 fn voxel_panel_preview_distance_to_segment(point: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
     let ab = b - a;
     let ap = point - a;
@@ -3785,80 +4609,385 @@ fn voxel_panel_preview_distance_to_segment(point: egui::Pos2, a: egui::Pos2, b: 
     point.distance(closest)
 }
 
-fn voxel_panel_preview_hover_label(
+fn voxel_panel_preview_instance_world_center(
+    export: &VoxelPanelCompositionMeshExportDef,
+    instance: &VoxelPanelBakedInstanceDef,
+) -> [f32; 3] {
+    let min = voxel_panel_preview_world_point(instance.bounds_min, 0.0, 0.0, 0.0, export);
+    let max = voxel_panel_preview_world_point(instance.bounds_max, 1.0, 1.0, 1.0, export);
+    [
+        (min[0] + max[0]) * 0.5,
+        (min[1] + max[1]) * 0.5,
+        (min[2] + max[2]) * 0.5,
+    ]
+}
+
+fn voxel_panel_preview_instance_screen_rect(
+    export: &VoxelPanelCompositionMeshExportDef,
+    camera: &VoxelPanelPreviewCameraState,
+    rect: egui::Rect,
+    view_center: [f32; 3],
+    instance: &VoxelPanelBakedInstanceDef,
+) -> egui::Rect {
+    let min = instance.bounds_min;
+    let max = instance.bounds_max;
+    let corners = [
+        voxel_panel_preview_world_point(min, 0.0, 0.0, 0.0, export),
+        voxel_panel_preview_world_point([max[0], min[1], min[2]], 1.0, 0.0, 0.0, export),
+        voxel_panel_preview_world_point([min[0], max[1], min[2]], 0.0, 1.0, 0.0, export),
+        voxel_panel_preview_world_point([max[0], max[1], min[2]], 1.0, 1.0, 0.0, export),
+        voxel_panel_preview_world_point([min[0], min[1], max[2]], 0.0, 0.0, 1.0, export),
+        voxel_panel_preview_world_point([max[0], min[1], max[2]], 1.0, 0.0, 1.0, export),
+        voxel_panel_preview_world_point([min[0], max[1], max[2]], 0.0, 1.0, 1.0, export),
+        voxel_panel_preview_world_point(max, 1.0, 1.0, 1.0, export),
+    ];
+
+    let mut min_pos = egui::pos2(f32::MAX, f32::MAX);
+    let mut max_pos = egui::pos2(f32::MIN, f32::MIN);
+    for corner in corners {
+        let point = voxel_panel_project_preview_point(corner, view_center, camera, rect);
+        min_pos.x = min_pos.x.min(point.x);
+        min_pos.y = min_pos.y.min(point.y);
+        max_pos.x = max_pos.x.max(point.x);
+        max_pos.y = max_pos.y.max(point.y);
+    }
+
+    egui::Rect::from_min_max(min_pos, max_pos).expand(8.0)
+}
+
+fn voxel_panel_preview_handle_segments(
+    export: &VoxelPanelCompositionMeshExportDef,
+    camera: &VoxelPanelPreviewCameraState,
+    rect: egui::Rect,
+    view_center: [f32; 3],
+    instance: &VoxelPanelBakedInstanceDef,
+) -> Vec<(VoxelPanelTransformAxis, egui::Pos2, egui::Pos2)> {
+    let origin = voxel_panel_preview_instance_world_center(export, instance);
+    let size_x =
+        (instance.bounds_max[0] - instance.bounds_min[0] + 1).max(1) as f32 * export.voxel_unit;
+    let size_y =
+        (instance.bounds_max[1] - instance.bounds_min[1] + 1).max(1) as f32 * export.voxel_unit;
+    let size_z =
+        (instance.bounds_max[2] - instance.bounds_min[2] + 1).max(1) as f32 * export.voxel_unit;
+    let handle_len = size_x.max(size_y).max(size_z).max(2.0) + export.voxel_unit * 3.0;
+    let start = voxel_panel_project_preview_point(origin, view_center, camera, rect);
+    let endpoints = [
+        (
+            VoxelPanelTransformAxis::X,
+            [origin[0] + handle_len, origin[1], origin[2]],
+        ),
+        (
+            VoxelPanelTransformAxis::Y,
+            [origin[0], origin[1] + handle_len, origin[2]],
+        ),
+        (
+            VoxelPanelTransformAxis::Z,
+            [origin[0], origin[1], origin[2] + handle_len],
+        ),
+    ];
+
+    endpoints
+        .into_iter()
+        .map(|(axis, world)| {
+            (
+                axis,
+                start,
+                voxel_panel_project_preview_point(world, view_center, camera, rect),
+            )
+        })
+        .collect()
+}
+
+fn voxel_panel_draw_preview_transform_handles(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    export: &VoxelPanelCompositionMeshExportDef,
+    camera: &VoxelPanelPreviewCameraState,
+    view_center: [f32; 3],
+    instance: &VoxelPanelBakedInstanceDef,
+    hovered_axis: Option<VoxelPanelTransformAxis>,
+) {
+    for (axis, start, end) in
+        voxel_panel_preview_handle_segments(export, camera, rect, view_center, instance)
+    {
+        let color = axis.color();
+        let selected = hovered_axis == Some(axis);
+        painter.line_segment(
+            [start, end],
+            egui::Stroke::new(if selected { 4.0 } else { 2.5 }, color),
+        );
+        painter.circle_filled(end, if selected { 6.0 } else { 4.5 }, color);
+        painter.text(
+            end + egui::vec2(5.0, -5.0),
+            egui::Align2::LEFT_BOTTOM,
+            axis.label(),
+            egui::FontId::monospace(11.0),
+            color,
+        );
+    }
+
+    let origin = voxel_panel_project_preview_point(
+        voxel_panel_preview_instance_world_center(export, instance),
+        view_center,
+        camera,
+        rect,
+    );
+    painter.circle_filled(
+        origin,
+        4.0,
+        egui::Color32::from_rgba_unmultiplied(244, 248, 255, 230),
+    );
+}
+
+fn voxel_panel_preview_rotate_handle_pos(
+    export: &VoxelPanelCompositionMeshExportDef,
+    camera: &VoxelPanelPreviewCameraState,
+    rect: egui::Rect,
+    view_center: [f32; 3],
+    instance: &VoxelPanelBakedInstanceDef,
+) -> egui::Pos2 {
+    let instance_rect =
+        voxel_panel_preview_instance_screen_rect(export, camera, rect, view_center, instance);
+    let center = voxel_panel_project_preview_point(
+        voxel_panel_preview_instance_world_center(export, instance),
+        view_center,
+        camera,
+        rect,
+    );
+    egui::pos2(center.x, instance_rect.top() - 18.0)
+}
+
+fn voxel_panel_draw_preview_rotation_handle(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    export: &VoxelPanelCompositionMeshExportDef,
+    camera: &VoxelPanelPreviewCameraState,
+    view_center: [f32; 3],
+    instance: &VoxelPanelBakedInstanceDef,
+    hovered: bool,
+) {
+    let handle = voxel_panel_preview_rotate_handle_pos(export, camera, rect, view_center, instance);
+    let color = if hovered {
+        egui::Color32::from_rgb(255, 180, 84)
+    } else {
+        egui::Color32::from_rgb(190, 150, 255)
+    };
+    let center = voxel_panel_project_preview_point(
+        voxel_panel_preview_instance_world_center(export, instance),
+        view_center,
+        camera,
+        rect,
+    );
+    painter.line_segment(
+        [center, handle],
+        egui::Stroke::new(
+            1.25,
+            egui::Color32::from_rgba_unmultiplied(190, 150, 255, 150),
+        ),
+    );
+    painter.circle_stroke(
+        handle,
+        if hovered { 11.0 } else { 9.0 },
+        egui::Stroke::new(2.0, color),
+    );
+    painter.circle_stroke(
+        handle,
+        if hovered { 6.0 } else { 5.0 },
+        egui::Stroke::new(1.25, color),
+    );
+    painter.text(
+        handle + egui::vec2(10.0, -7.0),
+        egui::Align2::LEFT_BOTTOM,
+        "R",
+        egui::FontId::monospace(11.0),
+        color,
+    );
+}
+
+fn voxel_panel_preview_axis_screen_vector(
+    export: &VoxelPanelCompositionMeshExportDef,
+    camera: &VoxelPanelPreviewCameraState,
+    rect: egui::Rect,
+    instance: &VoxelPanelBakedInstanceDef,
+    axis: VoxelPanelTransformAxis,
+) -> Option<egui::Vec2> {
+    let view_center = voxel_panel_preview_center(export);
+    voxel_panel_preview_handle_segments(export, camera, rect, view_center, instance)
+        .into_iter()
+        .find(|(candidate, _, _)| *candidate == axis)
+        .and_then(|(_, start, end)| {
+            let delta = end - start;
+            let len = (delta.x * delta.x + delta.y * delta.y).sqrt();
+            if len <= 0.001 {
+                None
+            } else {
+                Some(delta / len)
+            }
+        })
+}
+
+fn voxel_panel_preview_hit_test(
     export: &VoxelPanelCompositionMeshExportDef,
     camera: &VoxelPanelPreviewCameraState,
     rect: egui::Rect,
     hover_pos: egui::Pos2,
-) -> Option<String> {
-    let center = voxel_panel_preview_center(export);
-    for socket in &export.socket_gizmos {
-        let pos = voxel_panel_project_preview_point(
-            voxel_panel_preview_world_point(socket.world, 0.5, 0.5, 0.5, export),
-            center,
-            camera,
-            rect,
-        );
-        if hover_pos.distance(pos) <= 10.0 {
-            return Some(format!(
-                "socket {}.{} · edge {} · required {} · accepts {}",
-                socket.instance_id,
-                socket.socket_id,
-                socket.edge,
-                socket.required,
-                if socket.accepts.is_empty() {
-                    "<none>".to_string()
-                } else {
-                    socket.accepts.join(", ")
+    selected_instance_id: Option<&str>,
+) -> Option<VoxelPanelPreviewHit> {
+    let view_center = voxel_panel_preview_center(export);
+    let mut best: Option<VoxelPanelPreviewHit> = None;
+    let mut consider = |hit: VoxelPanelPreviewHit| {
+        if best
+            .as_ref()
+            .map(|current| hit.distance < current.distance)
+            .unwrap_or(true)
+        {
+            best = Some(hit);
+        }
+    };
+
+    if let Some(selected_instance_id) = selected_instance_id {
+        if let Some(instance) = export
+            .instances
+            .iter()
+            .find(|instance| instance.instance_id == selected_instance_id)
+        {
+            for (axis, start, end) in
+                voxel_panel_preview_handle_segments(export, camera, rect, view_center, instance)
+            {
+                let distance = voxel_panel_preview_distance_to_segment(hover_pos, start, end);
+                if distance <= 9.0 {
+                    consider(VoxelPanelPreviewHit {
+                        kind: VoxelPanelPreviewHitKind::TranslateHandle,
+                        instance_id: instance.instance_id.clone(),
+                        socket_id: None,
+                        connection_id: None,
+                        transform_axis: Some(axis),
+                        label: format!(
+                            "translate {} on {} axis · drag handle with grid snap",
+                            instance.instance_id,
+                            axis.label()
+                        ),
+                        distance,
+                    });
                 }
-            ));
+            }
+
+            let rotate_handle =
+                voxel_panel_preview_rotate_handle_pos(export, camera, rect, view_center, instance);
+            let rotate_distance = hover_pos.distance(rotate_handle);
+            if rotate_distance <= 11.0 {
+                consider(VoxelPanelPreviewHit {
+                    kind: VoxelPanelPreviewHitKind::RotateHandle,
+                    instance_id: instance.instance_id.clone(),
+                    socket_id: None,
+                    connection_id: None,
+                    transform_axis: None,
+                    label: format!(
+                        "rotate {} · click to rotate 90° clockwise",
+                        instance.instance_id
+                    ),
+                    distance: rotate_distance,
+                });
+            }
         }
     }
+
     for connection in &export.connection_gizmos {
         let from = voxel_panel_project_preview_point(
             voxel_panel_preview_world_point(connection.from_world, 0.5, 0.5, 0.5, export),
-            center,
+            view_center,
             camera,
             rect,
         );
         let to = voxel_panel_project_preview_point(
             voxel_panel_preview_world_point(connection.to_world, 0.5, 0.5, 0.5, export),
-            center,
+            view_center,
             camera,
             rect,
         );
-        if voxel_panel_preview_distance_to_segment(hover_pos, from, to) <= 7.0 {
-            return Some(format!(
-                "connection {} · {}.{} -> {}.{} · snapped {} · offset {:?}",
-                connection.connection_id,
-                connection.from_instance,
-                connection.from_socket,
-                connection.to_instance,
-                connection.to_socket,
-                connection.snapped,
-                connection.offset
-            ));
+        let distance = voxel_panel_preview_distance_to_segment(hover_pos, from, to);
+        if distance <= 8.0 {
+            consider(VoxelPanelPreviewHit {
+                kind: VoxelPanelPreviewHitKind::Connection,
+                instance_id: connection.from_instance.clone(),
+                socket_id: None,
+                connection_id: Some(connection.connection_id.clone()),
+                transform_axis: None,
+                label: format!(
+                    "connection {} · {}.{} → {}.{} · snapped {} · offset {:?}",
+                    connection.connection_id,
+                    connection.from_instance,
+                    connection.from_socket,
+                    connection.to_instance,
+                    connection.to_socket,
+                    connection.snapped,
+                    connection.offset
+                ),
+                distance,
+            });
         }
     }
+
+    for socket in &export.socket_gizmos {
+        let pos = voxel_panel_project_preview_point(
+            voxel_panel_preview_world_point(socket.world, 0.5, 0.5, 0.5, export),
+            view_center,
+            camera,
+            rect,
+        );
+        let distance = hover_pos.distance(pos);
+        if distance <= 11.0 {
+            consider(VoxelPanelPreviewHit {
+                kind: VoxelPanelPreviewHitKind::Socket,
+                instance_id: socket.instance_id.clone(),
+                socket_id: Some(socket.socket_id.clone()),
+                connection_id: None,
+                transform_axis: None,
+                label: format!(
+                    "socket {}.{} · edge {} · required {} · accepts {}",
+                    socket.instance_id,
+                    socket.socket_id,
+                    socket.edge,
+                    socket.required,
+                    if socket.accepts.is_empty() {
+                        "<none>".to_string()
+                    } else {
+                        socket.accepts.join(", ")
+                    }
+                ),
+                distance,
+            });
+        }
+    }
+
     for instance in &export.instances {
-        let center_world = [
-            (instance.bounds_min[0] + instance.bounds_max[0]) as f32 * 0.5,
-            (instance.bounds_min[1] + instance.bounds_max[1]) as f32 * 0.5,
-            (instance.bounds_min[2] + instance.bounds_max[2]) as f32 * 0.5,
-        ];
-        let pos = voxel_panel_project_preview_point(center_world, center, camera, rect);
-        if hover_pos.distance(pos) <= 16.0 {
-            return Some(format!(
-                "instance {} · panel {} · {} voxel(s) · bounds {:?}..{:?}",
-                instance.instance_id,
-                instance.panel_id,
-                instance.voxel_count,
-                instance.bounds_min,
-                instance.bounds_max
-            ));
+        let instance_rect =
+            voxel_panel_preview_instance_screen_rect(export, camera, rect, view_center, instance);
+        if instance_rect.contains(hover_pos) {
+            let center_world = voxel_panel_preview_instance_world_center(export, instance);
+            let center_screen =
+                voxel_panel_project_preview_point(center_world, view_center, camera, rect);
+            let distance = hover_pos.distance(center_screen).max(12.0);
+            consider(VoxelPanelPreviewHit {
+                kind: VoxelPanelPreviewHitKind::Instance,
+                instance_id: instance.instance_id.clone(),
+                socket_id: None,
+                connection_id: None,
+                transform_axis: None,
+                label: format!(
+                    "instance {} · panel {} · {} voxel(s) · bounds {:?}..{:?}",
+                    instance.instance_id,
+                    instance.panel_id,
+                    instance.voxel_count,
+                    instance.bounds_min,
+                    instance.bounds_max
+                ),
+                distance,
+            });
         }
     }
-    None
+
+    best
 }
 
 fn voxel_panel_draw_cube_face(
@@ -3958,8 +5087,29 @@ fn voxel_panel_draw_3d_preview(
     camera: &VoxelPanelPreviewCameraState,
     selected_instance_id: Option<&str>,
     selected_socket_key: Option<(&str, &str)>,
+    selected_connection_id: Option<&str>,
+    hover_hit: Option<&VoxelPanelPreviewHit>,
 ) {
     let center = voxel_panel_preview_center(export);
+    let hovered_instance_id = hover_hit.map(|hit| hit.instance_id.as_str());
+    let hovered_socket_key = hover_hit.and_then(|hit| {
+        hit.socket_id
+            .as_ref()
+            .map(|socket_id| (hit.instance_id.as_str(), socket_id.as_str()))
+    });
+    let hovered_axis = hover_hit.and_then(|hit| hit.transform_axis);
+    let hovered_rotate_instance_id = hover_hit.and_then(|hit| {
+        if hit.kind == VoxelPanelPreviewHitKind::RotateHandle {
+            Some(hit.instance_id.as_str())
+        } else {
+            None
+        }
+    });
+    let hovered_connection_id = hover_hit.and_then(|hit| {
+        hit.connection_id
+            .as_ref()
+            .map(|connection_id| connection_id.as_str())
+    });
 
     if camera.show_floor_grid {
         voxel_panel_draw_preview_floor_grid(painter, rect, export, camera, center);
@@ -3981,6 +5131,25 @@ fn voxel_panel_draw_3d_preview(
 
     if camera.show_bounds {
         voxel_panel_draw_preview_bounds(painter, rect, export, camera, center);
+        if let Some(hovered_instance_id) = hovered_instance_id {
+            if Some(hovered_instance_id) != selected_instance_id {
+                if let Some(instance) = export
+                    .instances
+                    .iter()
+                    .find(|instance| instance.instance_id == hovered_instance_id)
+                {
+                    voxel_panel_draw_preview_instance_bounds(
+                        painter,
+                        rect,
+                        export,
+                        camera,
+                        center,
+                        instance,
+                        egui::Stroke::new(1.75, egui::Color32::from_rgb(255, 180, 84)),
+                    );
+                }
+            }
+        }
         if let Some(selected_instance_id) = selected_instance_id {
             if let Some(instance) = export
                 .instances
@@ -3995,6 +5164,24 @@ fn voxel_panel_draw_3d_preview(
                     center,
                     instance,
                     egui::Stroke::new(2.25, egui::Color32::from_rgb(255, 236, 120)),
+                );
+                voxel_panel_draw_preview_transform_handles(
+                    painter,
+                    rect,
+                    export,
+                    camera,
+                    center,
+                    instance,
+                    hovered_axis,
+                );
+                voxel_panel_draw_preview_rotation_handle(
+                    painter,
+                    rect,
+                    export,
+                    camera,
+                    center,
+                    instance,
+                    hovered_rotate_instance_id == Some(instance.instance_id.as_str()),
                 );
             }
         }
@@ -4014,13 +5201,26 @@ fn voxel_panel_draw_3d_preview(
                 camera,
                 rect,
             );
-            let selected = selected_instance_id
+            let selected_by_connection = selected_connection_id
+                .map(|selected| selected == connection.connection_id)
+                .unwrap_or(false);
+            let hovered_connection = hovered_connection_id
+                .map(|hovered| hovered == connection.connection_id)
+                .unwrap_or(false);
+            let selected_by_instance = selected_instance_id
                 .map(|selected| {
                     selected == connection.from_instance || selected == connection.to_instance
                 })
                 .unwrap_or(false);
-            let stroke = if selected {
-                egui::Stroke::new(2.75, egui::Color32::from_rgb(255, 236, 120))
+            let valid = voxel_panel_preview_connection_gizmo_valid(export, connection);
+            let stroke = if selected_by_connection {
+                egui::Stroke::new(3.25, egui::Color32::from_rgb(255, 248, 154))
+            } else if hovered_connection {
+                egui::Stroke::new(3.0, egui::Color32::from_rgb(255, 180, 84))
+            } else if selected_by_instance {
+                egui::Stroke::new(2.25, egui::Color32::from_rgb(255, 236, 120))
+            } else if !valid {
+                egui::Stroke::new(2.25, egui::Color32::from_rgb(238, 96, 96))
             } else if connection.snapped {
                 egui::Stroke::new(2.0, egui::Color32::from_rgb(126, 196, 137))
             } else {
@@ -4043,17 +5243,36 @@ fn voxel_panel_draw_3d_preview(
                     instance_id == socket.instance_id && socket_id == socket.socket_id
                 })
                 .unwrap_or(false);
+            let hovered_socket = hovered_socket_key
+                .map(|(instance_id, socket_id)| {
+                    instance_id == socket.instance_id && socket_id == socket.socket_id
+                })
+                .unwrap_or(false);
             let color = if selected_socket {
                 egui::Color32::from_rgb(255, 248, 154)
+            } else if hovered_socket {
+                egui::Color32::from_rgb(255, 180, 84)
             } else if socket.required {
                 egui::Color32::from_rgb(255, 216, 96)
             } else {
                 egui::Color32::from_rgb(112, 192, 255)
             };
-            painter.circle_filled(pos, if selected_socket { 6.0 } else { 4.0 }, color);
+            painter.circle_filled(
+                pos,
+                if selected_socket || hovered_socket {
+                    6.0
+                } else {
+                    4.0
+                },
+                color,
+            );
             painter.circle_stroke(
                 pos,
-                if selected_socket { 7.0 } else { 5.0 },
+                if selected_socket || hovered_socket {
+                    7.0
+                } else {
+                    5.0
+                },
                 egui::Stroke::new(1.0, egui::Color32::from_rgb(8, 10, 14)),
             );
             if camera.show_labels {
@@ -4279,15 +5498,11 @@ fn normalize_layer_rows(layer: &mut TileLayerDef, width: usize, height: usize) {
     }
 }
 fn map_layers_path(project_root: &std::path::Path, map_id: &str) -> PathBuf {
-    map_content_path(project_root, map_id, "layers.ron")
+    EditorContentPaths::new(project_root).map_layers_path(map_id)
 }
 
 fn map_content_path(project_root: &std::path::Path, map_id: &str, file_name: &str) -> PathBuf {
-    project_root
-        .join("content")
-        .join("maps")
-        .join(map_id)
-        .join(file_name)
+    EditorContentPaths::new(project_root).map_file(map_id, file_name)
 }
 
 fn unique_id<'a>(base: &str, existing: impl Iterator<Item = &'a str>) -> String {
@@ -4309,31 +5524,8 @@ fn save_ron_with_backup<T: Serialize>(
     value: &T,
     phase_tag: &str,
 ) -> anyhow::Result<Option<PathBuf>> {
-    let backup_path = if path.exists() {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_secs())
-            .unwrap_or(0);
-        let backup_path = path.with_file_name(format!(
-            "{}.{}.{}.bak.ron",
-            path.file_stem()
-                .and_then(|stem| stem.to_str())
-                .unwrap_or("content"),
-            phase_tag,
-            timestamp
-        ));
-        std::fs::copy(path, &backup_path).with_context(|| {
-            format!(
-                "failed to create editor content backup {}",
-                backup_path.display()
-            )
-        })?;
-        Some(backup_path)
-    } else {
-        None
-    };
-    game_data::loader::save_ron_file(path, value)?;
-    Ok(backup_path)
+    editor_data_bridge::save_ron_with_backup(path, value, phase_tag)
+        .map(|outcome| outcome.backup_path)
 }
 
 fn layer_symbol_for_tile(layer: &TileLayerDef, tile_id: &str) -> Option<char> {
@@ -4466,6 +5658,7 @@ pub fn run_editor_egui() -> anyhow::Result<()> {
         .context("failed to write egui editor live-preview manifest")?;
 
     let options = eframe::NativeOptions {
+        renderer: eframe::Renderer::Glow,
         viewport: egui::ViewportBuilder::default()
             .with_title("Starlight Ridge Editor")
             .with_inner_size([1500.0, 900.0])
@@ -4473,11 +5666,14 @@ pub fn run_editor_egui() -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    let app = StarlightRidgeEguiEditor::new(project_root, registry, active_map_id)?;
     eframe::run_native(
         "Starlight Ridge Editor",
         options,
-        Box::new(move |_cc| Ok(Box::new(app))),
+        Box::new(move |cc| {
+            StarlightRidgeEguiEditor::new(project_root, registry, active_map_id, cc.gl.clone())
+                .map(|app| Box::new(app) as Box<dyn eframe::App>)
+                .map_err(|error| error.into())
+        }),
     )
     .map_err(|error| anyhow::anyhow!("failed to run egui editor: {error}"))
 }
@@ -4494,6 +5690,8 @@ struct ContentReloadPayload {
     tile_map: Option<TileMapRenderData>,
     editor_map: Option<EditorMapState>,
     world_placements: Option<WorldPlacementState>,
+    scene_voxel_preview: Option<SceneVoxelPreviewState>,
+    scene_voxel_render_data: Option<VoxelSceneRenderData>,
     vox_assets: Vec<VoxAssetInfo>,
     vox_scan_error: Option<String>,
 }
@@ -4505,6 +5703,8 @@ struct StarlightRidgeEguiEditor {
     tile_map: Option<TileMapRenderData>,
     editor_map: Option<EditorMapState>,
     world_placements: Option<WorldPlacementState>,
+    scene_voxel_preview: Option<SceneVoxelPreviewState>,
+    scene_voxel_render_data: Option<VoxelSceneRenderData>,
     map_brush_size: u32,
     selected_tool: usize,
     selected_asset_index: usize,
@@ -4541,6 +5741,15 @@ struct StarlightRidgeEguiEditor {
     shell_render_depth: u8,
     vox_assets: Vec<VoxAssetInfo>,
     selected_vox_index: usize,
+    selected_scene_voxel_index: usize,
+    scene3d_yaw_degrees: f32,
+    scene3d_pitch_degrees: f32,
+    scene3d_zoom: f32,
+    scene3d_tool: Scene3dTool,
+    scene3d_last_drag_delta: egui::Vec2,
+    scene3d_gl_renderer: Option<Arc<Mutex<VoxelEditorGlowRenderer>>>,
+    scene3d_gl_context: Option<Arc<eframe::glow::Context>>,
+    scene3d_gl_pick_result: Arc<Mutex<Option<VoxelEditorPickResult>>>,
     loaded_vox_cache: Option<(String, VoxModel)>,
     generator_log: Vec<String>,
     pixel_editor: PixelEditorState,
@@ -4554,6 +5763,7 @@ impl StarlightRidgeEguiEditor {
         project_root: PathBuf,
         registry: ContentRegistry,
         active_map_id: String,
+        gl: Option<Arc<eframe::glow::Context>>,
     ) -> anyhow::Result<Self> {
         let tile_map = build_tile_map_render_data(&project_root, &registry, &active_map_id)
             .with_context(|| {
@@ -4577,6 +5787,22 @@ impl StarlightRidgeEguiEditor {
                 None
             }
         };
+        let scene_voxel_preview =
+            match load_scene_voxel_preview_state(&project_root, &active_map_id) {
+                Ok(state) => state,
+                Err(error) => {
+                    log::warn!("failed to load scene voxel preview state: {error:#}");
+                    None
+                }
+            };
+        let scene_voxel_render_data =
+            match build_voxel_scene_render_data(&project_root, &active_map_id, tile_map.as_ref()) {
+                Ok(data) => data,
+                Err(error) => {
+                    log::warn!("failed to build scene voxel render data: {error:#}");
+                    None
+                }
+            };
         let pixel_editor =
             PixelEditorState::load_for_active_tileset(&project_root, &registry, &active_map_id);
         let voxel_panel_designer = VoxelPanelDesignerState::load(&project_root);
@@ -4587,6 +5813,16 @@ impl StarlightRidgeEguiEditor {
                 Vec::new()
             }
         };
+        let scene3d_gl_renderer = match gl.as_ref() {
+            Some(gl) => match VoxelEditorGlowRenderer::new(gl) {
+                Ok(renderer) => Some(Arc::new(Mutex::new(renderer))),
+                Err(error) => {
+                    log::warn!("failed to initialize embedded voxel GL viewport: {error:#}");
+                    None
+                }
+            },
+            None => None,
+        };
 
         let mut editor = Self {
             project_root,
@@ -4595,6 +5831,8 @@ impl StarlightRidgeEguiEditor {
             tile_map,
             editor_map,
             world_placements,
+            scene_voxel_preview,
+            scene_voxel_render_data,
             map_brush_size: 1,
             selected_tool: 0,
             selected_asset_index: 0,
@@ -4632,6 +5870,15 @@ impl StarlightRidgeEguiEditor {
             shell_render_depth: 0,
             vox_assets,
             selected_vox_index: 0,
+            selected_scene_voxel_index: 0,
+            scene3d_yaw_degrees: -35.0,
+            scene3d_pitch_degrees: 58.0,
+            scene3d_zoom: 1.0,
+            scene3d_tool: Scene3dTool::Orbit,
+            scene3d_last_drag_delta: egui::Vec2::ZERO,
+            scene3d_gl_renderer,
+            scene3d_gl_context: gl,
+            scene3d_gl_pick_result: Arc::new(Mutex::new(None)),
             loaded_vox_cache: None,
             generator_log: Vec::new(),
             pixel_editor,
@@ -4777,12 +6024,13 @@ impl StarlightRidgeEguiEditor {
 
         let path = state.layers_path.clone();
         let layers = state.layers.clone();
-        match game_data::loader::save_map_layers_with_backup(&path, &layers) {
-            Ok(backup_path) => {
+        match editor_data_bridge::save_ron_with_backup(&path, &layers, "phase51f") {
+            Ok(outcome) => {
                 if let Some(state) = self.editor_map.as_mut() {
                     state.dirty = false;
                 }
-                let backup_note = backup_path
+                let backup_note = outcome
+                    .backup_path
                     .as_ref()
                     .map(|path| format!(" Backup: {}.", path.display()))
                     .unwrap_or_else(|| {
@@ -5853,6 +7101,12 @@ impl StarlightRidgeEguiEditor {
             .unwrap_or_default();
 
         for layer in &state.layers.layers {
+            if layer.locked {
+                issues.push(format!(
+                    "layer '{}' is locked; paint, erase, fill, and tile assignment edits are disabled until it is unlocked",
+                    layer.id
+                ));
+            }
             if layer.rows.len() != expected_height {
                 issues.push(format!(
                     "layer '{}' has {} rows but map height is {}",
@@ -5907,6 +7161,285 @@ impl StarlightRidgeEguiEditor {
                         ));
                     }
                 }
+            }
+        }
+
+        issues
+    }
+
+    fn map_validation_issue_records(&self) -> Vec<ValidationIssue> {
+        let layer_path = self
+            .editor_map
+            .as_ref()
+            .map(|state| state.layers_path.clone());
+        let placement_paths = self.world_placements.as_ref().map(|state| {
+            (
+                state.props_path.clone(),
+                state.spawns_path.clone(),
+                state.triggers_path.clone(),
+                state.voxel_objects_path.clone(),
+            )
+        });
+        let scene_voxel_path = Some(map_content_path(
+            &self.project_root,
+            &self.active_map_id,
+            "voxel_objects.ron",
+        ));
+
+        let mut records = Vec::new();
+        records.extend(
+            self.map_layer_validation_issues()
+                .into_iter()
+                .map(|message| ValidationIssue::new("Layers", message, layer_path.clone())),
+        );
+        records.extend(
+            self.world_placement_validation_issues()
+                .into_iter()
+                .map(|message| {
+                    let source_path = placement_paths.as_ref().map(|paths| {
+                        let lower = message.to_ascii_lowercase();
+                        if lower.contains("spawn") {
+                            paths.1.clone()
+                        } else if lower.contains("trigger") {
+                            paths.2.clone()
+                        } else if lower.contains("voxel object")
+                            || lower.contains("voxel_objects.ron")
+                        {
+                            paths.3.clone()
+                        } else {
+                            paths.0.clone()
+                        }
+                    });
+                    ValidationIssue::new("Placements", message, source_path)
+                }),
+        );
+        records.extend(
+            self.scene_voxel_validation_issues()
+                .into_iter()
+                .map(|message| {
+                    ValidationIssue::new("Scene Voxels", message, scene_voxel_path.clone())
+                }),
+        );
+        records
+    }
+
+    fn world_placement_validation_issues(&self) -> Vec<String> {
+        let mut issues = Vec::new();
+        let Some(state) = &self.world_placements else {
+            issues.push(format!(
+                "map '{}' has no editable world placement files loaded",
+                self.active_map_id
+            ));
+            return issues;
+        };
+
+        if state.map_id != self.active_map_id {
+            issues.push(format!(
+                "world placement state map_id '{}' does not match active map '{}'",
+                state.map_id, self.active_map_id
+            ));
+        }
+        if state.voxel_objects.map_id != self.active_map_id {
+            issues.push(format!(
+                "voxel_objects.ron map_id '{}' does not match active map '{}'",
+                state.voxel_objects.map_id, self.active_map_id
+            ));
+        }
+
+        let (map_width, map_height) = self.active_map_dimensions();
+        collect_duplicate_id_issues(
+            &mut issues,
+            "prop",
+            state.props.iter().map(|prop| prop.id.as_str()),
+        );
+        collect_duplicate_id_issues(
+            &mut issues,
+            "spawn",
+            state.spawns.iter().map(|spawn| spawn.id.as_str()),
+        );
+        collect_duplicate_id_issues(
+            &mut issues,
+            "trigger",
+            state.triggers.iter().map(|trigger| trigger.id.as_str()),
+        );
+        collect_duplicate_id_issues(
+            &mut issues,
+            "voxel object",
+            state
+                .voxel_objects
+                .objects
+                .iter()
+                .map(|object| object.id.as_str()),
+        );
+
+        for prop in &state.props {
+            if prop.id.trim().is_empty() {
+                issues.push("prop has an empty id".to_string());
+            }
+            if prop.kind.trim().is_empty() {
+                issues.push(format!("prop '{}' has an empty kind", prop.id));
+            }
+            if !point_in_map(prop.x, prop.y, map_width, map_height) {
+                issues.push(format!(
+                    "prop '{}' is outside map bounds at {},{}",
+                    prop.id, prop.x, prop.y
+                ));
+            }
+        }
+
+        for spawn in &state.spawns {
+            if spawn.id.trim().is_empty() {
+                issues.push("spawn has an empty id".to_string());
+            }
+            if spawn.kind.trim().is_empty() {
+                issues.push(format!("spawn '{}' has an empty kind", spawn.id));
+            }
+            if !point_in_map(spawn.x, spawn.y, map_width, map_height) {
+                issues.push(format!(
+                    "spawn '{}' is outside map bounds at {},{}",
+                    spawn.id, spawn.x, spawn.y
+                ));
+            }
+        }
+
+        for trigger in &state.triggers {
+            if trigger.id.trim().is_empty() {
+                issues.push("trigger has an empty id".to_string());
+            }
+            if trigger.kind.trim().is_empty() {
+                issues.push(format!("trigger '{}' has an empty kind", trigger.id));
+            }
+            if trigger.target_map.trim().is_empty() {
+                issues.push(format!("trigger '{}' has an empty target map", trigger.id));
+            } else if !self.registry.maps.contains_key(&trigger.target_map) {
+                issues.push(format!(
+                    "trigger '{}' targets missing map '{}'",
+                    trigger.id, trigger.target_map
+                ));
+            }
+            if trigger.w <= 0 || trigger.h <= 0 {
+                issues.push(format!(
+                    "trigger '{}' has invalid size {}x{}",
+                    trigger.id, trigger.w, trigger.h
+                ));
+            }
+            if !rect_in_map(
+                trigger.x,
+                trigger.y,
+                trigger.w.max(1),
+                trigger.h.max(1),
+                map_width,
+                map_height,
+            ) {
+                issues.push(format!(
+                    "trigger '{}' footprint {},{} {}x{} exceeds map bounds",
+                    trigger.id, trigger.x, trigger.y, trigger.w, trigger.h
+                ));
+            }
+        }
+
+        for object in &state.voxel_objects.objects {
+            if object.id.trim().is_empty() {
+                issues.push("voxel object has an empty id".to_string());
+            }
+            if object.source_id.trim().is_empty() {
+                issues.push(format!(
+                    "voxel object '{}' has an empty source id",
+                    object.id
+                ));
+            }
+            if object.footprint_width <= 0.0
+                || object.footprint_height <= 0.0
+                || object.height <= 0.0
+            {
+                issues.push(format!(
+                    "voxel object '{}' has invalid size {:.2}x{:.2}x{:.2}",
+                    object.id, object.footprint_width, object.footprint_height, object.height
+                ));
+            }
+            if !float_rect_in_map(
+                object.x,
+                object.y,
+                object.footprint_width.max(0.1),
+                object.footprint_height.max(0.1),
+                map_width,
+                map_height,
+            ) {
+                issues.push(format!(
+                    "voxel object '{}' footprint {:.1},{:.1} {:.1}x{:.1} exceeds map bounds",
+                    object.id, object.x, object.y, object.footprint_width, object.footprint_height
+                ));
+            }
+            if !object.source_path.trim().is_empty() {
+                let source_path = std::path::Path::new(&object.source_path);
+                let resolved = if source_path.is_absolute() {
+                    source_path.to_path_buf()
+                } else {
+                    self.project_root.join(source_path)
+                };
+                if !resolved.exists() {
+                    issues.push(format!(
+                        "voxel object '{}' source path '{}' does not exist",
+                        object.id, object.source_path
+                    ));
+                }
+            }
+        }
+
+        issues
+    }
+
+    fn scene_voxel_validation_issues(&self) -> Vec<String> {
+        let mut issues = Vec::new();
+        let Some(scene_preview) = &self.scene_voxel_preview else {
+            return issues;
+        };
+
+        collect_duplicate_id_issues(
+            &mut issues,
+            "scene voxel object",
+            scene_preview
+                .entries
+                .iter()
+                .map(|entry| entry.object_id.as_str()),
+        );
+
+        let (map_width, map_height) = self.active_map_dimensions();
+        for entry in &scene_preview.entries {
+            if entry.object_id.trim().is_empty() {
+                issues.push("scene voxel object has an empty id".to_string());
+            }
+            if entry.asset_id.trim().is_empty() {
+                issues.push(format!(
+                    "scene voxel object '{}' has an empty asset id",
+                    entry.object_id
+                ));
+            }
+            if !entry.source_exists {
+                issues.push(format!(
+                    "scene voxel object '{}' source '{}' is missing",
+                    entry.object_id, entry.relative_source_path
+                ));
+            }
+            if entry.scale <= 0.0 || entry.asset_scale <= 0.0 || entry.voxels_per_tile == 0 {
+                issues.push(format!(
+                    "scene voxel object '{}' has invalid scale data",
+                    entry.object_id
+                ));
+            }
+            let dims = self.scene_voxel_entry_dimensions_tiles(entry);
+            if !float_rect_in_map(
+                entry.position[0],
+                entry.position[1],
+                dims[0].max(0.1),
+                dims[1].max(0.1),
+                map_width,
+                map_height,
+            ) {
+                issues.push(format!(
+                    "scene voxel object '{}' footprint {:.1},{:.1} {:.1}x{:.1} exceeds map bounds",
+                    entry.object_id, entry.position[0], entry.position[1], dims[0], dims[1]
+                ));
             }
         }
 
@@ -6194,12 +7727,8 @@ impl StarlightRidgeEguiEditor {
             }
         }
 
-        let backup = game_data::loader::save_map_layers_with_phase_backup(
-            &layers_path,
-            &layers,
-            "phase52g",
-        )?;
-        report.backup_path = backup;
+        let outcome = editor_data_bridge::save_ron_with_backup(&layers_path, &layers, "phase52g")?;
+        report.backup_path = outcome.backup_path;
         report.committed = true;
         self.worldgen_bake_preview = Some(WorldgenBakePreviewState {
             report: report.clone(),
@@ -6306,8 +7835,15 @@ impl StarlightRidgeEguiEditor {
         }
 
         let world_placements = WorldPlacementState::load(&project_root, &active_map_id).ok();
+        let scene_voxel_preview = load_scene_voxel_preview_state(&project_root, &active_map_id)
+            .ok()
+            .flatten();
         let tile_map = build_tile_map_render_data(&project_root, &registry, &active_map_id)
             .context("failed to rebuild egui tile preview")?;
+        let scene_voxel_render_data =
+            build_voxel_scene_render_data(&project_root, &active_map_id, tile_map.as_ref())
+                .ok()
+                .flatten();
 
         Ok(ContentReloadPayload {
             active_map_id,
@@ -6315,6 +7851,8 @@ impl StarlightRidgeEguiEditor {
             tile_map,
             editor_map,
             world_placements,
+            scene_voxel_preview,
+            scene_voxel_render_data,
             vox_assets,
             vox_scan_error,
         })
@@ -6339,9 +7877,22 @@ impl StarlightRidgeEguiEditor {
         self.tile_map = payload.tile_map;
         self.editor_map = payload.editor_map;
         self.world_placements = payload.world_placements;
+        self.scene_voxel_preview = payload.scene_voxel_preview;
+        self.scene_voxel_render_data = payload.scene_voxel_render_data;
         self.vox_assets = payload.vox_assets;
         if self.selected_vox_index >= self.vox_assets.len() {
             self.selected_vox_index = self.vox_assets.len().saturating_sub(1);
+        }
+        if self
+            .scene_voxel_preview
+            .as_ref()
+            .is_some_and(|state| self.selected_scene_voxel_index >= state.entries.len())
+        {
+            self.selected_scene_voxel_index = self
+                .scene_voxel_preview
+                .as_ref()
+                .map(|state| state.entries.len().saturating_sub(1))
+                .unwrap_or(0);
         }
         self.sync_selected_symbol_to_tile();
 
@@ -6672,6 +8223,7 @@ impl StarlightRidgeEguiEditor {
                 ui.selectable_value(&mut self.world_subtab, WorldSubTab::MapPaint, "Map Paint");
                 ui.selectable_value(&mut self.world_subtab, WorldSubTab::Layers, "Layers");
                 ui.selectable_value(&mut self.world_subtab, WorldSubTab::Objects, "Objects");
+                ui.selectable_value(&mut self.world_subtab, WorldSubTab::Scene3d, "3D Preview");
                 ui.selectable_value(
                     &mut self.world_subtab,
                     WorldSubTab::TerrainRules,
@@ -6852,7 +8404,9 @@ impl StarlightRidgeEguiEditor {
             }
             if ui.button("Validate").clicked() {
                 self.bottom_tab = BottomTab::Validation;
-                self.status = "Focused validation results.".to_string();
+                self.right_tab = RightTab::Validation;
+                let issue_count = self.map_validation_issue_records().len();
+                self.status = format!("Focused validation results: {issue_count} issue(s).");
             }
             if ui.button("Checkpoint").clicked() {
                 self.write_selection_manifest();
@@ -7044,6 +8598,7 @@ impl StarlightRidgeEguiEditor {
                 ui.heading("Inspector");
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.right_tab, RightTab::Tile, "Selection");
+                    ui.selectable_value(&mut self.right_tab, RightTab::Validation, "Validation");
                     ui.selectable_value(&mut self.right_tab, RightTab::Seams, "Seams");
                     ui.selectable_value(&mut self.right_tab, RightTab::Export, "Export");
                 });
@@ -7051,6 +8606,7 @@ impl StarlightRidgeEguiEditor {
 
                 match self.right_tab {
                     RightTab::Tile => self.draw_tile_inspector(ui),
+                    RightTab::Validation => self.draw_validation_inspector(ui),
                     RightTab::Seams => self.draw_seam_inspector(ui),
                     RightTab::Export => self.draw_export_inspector(ui),
                 }
@@ -7228,6 +8784,111 @@ impl StarlightRidgeEguiEditor {
                 }
                 return;
             }
+            EditorSelection::SceneVoxelObject => {
+                ui.heading("Selected scene voxel");
+                let Some(scene_preview) = self.scene_voxel_preview.as_ref() else {
+                    ui.label("No scene voxel object set loaded.");
+                    return;
+                };
+                let Some(entry) = scene_preview.entries.get(self.selected_scene_voxel_index) else {
+                    ui.label("No scene voxel object selected.");
+                    return;
+                };
+
+                egui::Grid::new("scene_voxel_object_inspector")
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.label("Object ID");
+                        ui.monospace(entry.object_id.as_str());
+                        ui.end_row();
+                        ui.label("Asset ID");
+                        ui.monospace(entry.asset_id.as_str());
+                        ui.end_row();
+                        ui.label("Source");
+                        ui.monospace(entry.relative_source_path.as_str());
+                        ui.end_row();
+                        ui.label("Source status");
+                        ui.label(if entry.source_exists {
+                            "Resolved"
+                        } else {
+                            "Missing"
+                        });
+                        ui.end_row();
+                        ui.label("Position");
+                        ui.label(format!(
+                            "{:.2}, {:.2}, {:.2}",
+                            entry.position[0], entry.position[1], entry.position[2]
+                        ));
+                        ui.end_row();
+                        ui.label("Rotation");
+                        ui.label(format!(
+                            "{:.1}, {:.1}, {:.1}",
+                            entry.rotation_degrees[0],
+                            entry.rotation_degrees[1],
+                            entry.rotation_degrees[2]
+                        ));
+                        ui.end_row();
+                        ui.label("Scale");
+                        ui.label(format!("{:.2}", entry.scale));
+                        ui.end_row();
+                        ui.label("Asset scale");
+                        ui.label(format!("{:.2}", entry.asset_scale));
+                        ui.end_row();
+                        ui.label("Voxels / tile");
+                        ui.label(entry.voxels_per_tile.to_string());
+                        ui.end_row();
+                        ui.label("Pivot");
+                        ui.label(format!(
+                            "{:?} @ {:.1}, {:.1}, {:.1}",
+                            entry.pivot_mode,
+                            entry.pivot_offset[0],
+                            entry.pivot_offset[1],
+                            entry.pivot_offset[2]
+                        ));
+                        ui.end_row();
+                        ui.label("Layer");
+                        ui.label(entry.layer.as_str());
+                        ui.end_row();
+                        ui.label("Collision");
+                        ui.label(if entry.collision_enabled {
+                            "Enabled"
+                        } else {
+                            "Disabled"
+                        });
+                        ui.end_row();
+                        ui.label("Interaction");
+                        ui.label(entry.interaction_id.as_deref().unwrap_or("<none>"));
+                        ui.end_row();
+                    });
+
+                ui.separator();
+                ui.label(if entry.tags.is_empty() {
+                    "Tags: <none>".to_string()
+                } else {
+                    format!("Tags: {}", entry.tags.join(", "))
+                });
+
+                if let Some(render_data) = self.scene_voxel_render_data.as_ref() {
+                    ui.separator();
+                    ui.label("Shared render contract");
+                    ui.label(format!("{} vertices", render_data.vertices.len()));
+                    ui.label(format!("{} triangles", render_data.indices.len() / 3));
+                }
+
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button("Show in 3D Preview").clicked() {
+                        self.workspace_tab = WorkspaceTab::World;
+                        self.world_subtab = WorldSubTab::Scene3d;
+                        self.right_tab = RightTab::Tile;
+                    }
+                    if ui.button("Show object list").clicked() {
+                        self.workspace_tab = WorkspaceTab::World;
+                        self.world_subtab = WorldSubTab::Objects;
+                        self.right_tab = RightTab::Tile;
+                    }
+                });
+                return;
+            }
             EditorSelection::PixelSelection => {
                 ui.heading("Pixel selection");
                 ui.label(format!(
@@ -7365,6 +9026,12 @@ impl StarlightRidgeEguiEditor {
                 let dirty = state.dirty;
                 if let Some(layer) = state.layers.layers.get_mut(index) {
                     ui.label(format!("ID: {}", layer.id));
+                    if layer.locked {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(230, 184, 92),
+                            "Locked: paint, erase, fill, and tile assignment edits are blocked.",
+                        );
+                    }
                     let mut visible = layer.visible;
                     if ui.checkbox(&mut visible, "Visible").changed() {
                         layer.visible = visible;
@@ -7592,11 +9259,11 @@ impl StarlightRidgeEguiEditor {
     }
 
     fn draw_validation_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Map layer validation");
-        let issues = self.map_layer_validation_issues();
+        ui.heading("Map validation");
+        let issues = self.map_validation_issue_records();
         if issues.is_empty() {
             ui.label(format!(
-                "No layer issues detected for '{}'.",
+                "No map, placement, or scene voxel issues detected for '{}'.",
                 self.active_map_id
             ));
         } else {
@@ -7607,10 +9274,12 @@ impl StarlightRidgeEguiEditor {
             ));
             egui::ScrollArea::vertical().show(ui, |ui| {
                 for issue in issues.iter().take(80) {
-                    ui.label(format!("• {issue}"));
+                    if draw_validation_issue_row(ui, issue, true) {
+                        self.focus_validation_issue(issue);
+                    }
                 }
                 if issues.len() > 80 {
-                    ui.label(format!("…and {} more.", issues.len() - 80));
+                    ui.label(format!("...and {} more.", issues.len() - 80));
                 }
             });
         }
@@ -7620,6 +9289,159 @@ impl StarlightRidgeEguiEditor {
         ui.label("• external atlas import must validate size, tile grid, role tags, and collisions before merging");
         ui.label("• animation timeline events need socket/hitbox preview and save validation");
         ui.label("• seasonal tile sets need parity checks across spring/summer/autumn/winter");
+    }
+
+    fn draw_validation_inspector(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Validation");
+        ui.label(format!("Active map: {}", self.active_map_id));
+
+        let issues = self.map_validation_issue_records();
+        let layer_issues = validation_issues_for_category(&issues, "Layers");
+        let placement_issues = validation_issues_for_category(&issues, "Placements");
+        let scene_issues = validation_issues_for_category(&issues, "Scene Voxels");
+        let total_issues = layer_issues.len() + placement_issues.len() + scene_issues.len();
+
+        ui.horizontal_wrapped(|ui| {
+            ui.label(format!("Layers: {}", layer_issues.len()));
+            ui.label(format!("Placements: {}", placement_issues.len()));
+            ui.label(format!("Scene voxels: {}", scene_issues.len()));
+        });
+
+        if total_issues == 0 {
+            ui.separator();
+            ui.label("No issues detected for the active map.");
+            return;
+        }
+
+        ui.separator();
+        egui::ScrollArea::vertical()
+            .id_salt("right_validation_issues")
+            .show(ui, |ui| {
+                self.draw_validation_issue_group(ui, "Layers", &layer_issues);
+                self.draw_validation_issue_group(ui, "Placements", &placement_issues);
+                self.draw_validation_issue_group(ui, "Scene Voxels", &scene_issues);
+            });
+    }
+
+    fn draw_validation_issue_group(
+        &mut self,
+        ui: &mut egui::Ui,
+        label: &str,
+        issues: &[&ValidationIssue],
+    ) {
+        ui.collapsing(format!("{label} ({})", issues.len()), |ui| {
+            if issues.is_empty() {
+                ui.label("No issues.");
+            } else {
+                for issue in issues.iter().take(80) {
+                    if draw_validation_issue_row(ui, issue, false) {
+                        self.focus_validation_issue(issue);
+                    }
+                }
+                if issues.len() > 80 {
+                    ui.label(format!("...and {} more.", issues.len() - 80));
+                }
+            }
+        });
+    }
+
+    fn focus_validation_issue(&mut self, issue: &ValidationIssue) {
+        let Some(target) = issue.target.as_ref() else {
+            self.status = format!("Validation issue {} has no focus target.", issue.id);
+            return;
+        };
+        self.right_tab = RightTab::Tile;
+        match target {
+            ValidationTarget::Layer(id) => {
+                if let Some(state) = self.editor_map.as_mut() {
+                    if let Some(index) =
+                        state.layers.layers.iter().position(|layer| layer.id == *id)
+                    {
+                        state.selected_layer_index = index;
+                        self.editor_selection = EditorSelection::Layer;
+                        self.world_subtab = WorldSubTab::Layers;
+                        self.workspace_tab = WorkspaceTab::World;
+                        self.status = format!("Focused layer '{id}' from validation.");
+                        return;
+                    }
+                }
+            }
+            ValidationTarget::Prop(id) => {
+                if let Some(state) = self.world_placements.as_mut() {
+                    if let Some(index) = state.props.iter().position(|prop| prop.id == *id) {
+                        state.selected_prop_index = index;
+                        state.active_selection = WorldPlacementKind::Prop;
+                        self.editor_selection = EditorSelection::Prop;
+                        self.world_subtab = WorldSubTab::Objects;
+                        self.workspace_tab = WorkspaceTab::World;
+                        self.status = format!("Focused prop '{id}' from validation.");
+                        return;
+                    }
+                }
+            }
+            ValidationTarget::Spawn(id) => {
+                if let Some(state) = self.world_placements.as_mut() {
+                    if let Some(index) = state.spawns.iter().position(|spawn| spawn.id == *id) {
+                        state.selected_spawn_index = index;
+                        state.active_selection = WorldPlacementKind::Spawn;
+                        self.editor_selection = EditorSelection::Spawn;
+                        self.world_subtab = WorldSubTab::Objects;
+                        self.workspace_tab = WorkspaceTab::World;
+                        self.status = format!("Focused spawn '{id}' from validation.");
+                        return;
+                    }
+                }
+            }
+            ValidationTarget::Trigger(id) => {
+                if let Some(state) = self.world_placements.as_mut() {
+                    if let Some(index) = state.triggers.iter().position(|trigger| trigger.id == *id)
+                    {
+                        state.selected_trigger_index = index;
+                        state.active_selection = WorldPlacementKind::Trigger;
+                        self.editor_selection = EditorSelection::Trigger;
+                        self.world_subtab = WorldSubTab::Objects;
+                        self.workspace_tab = WorkspaceTab::World;
+                        self.status = format!("Focused trigger '{id}' from validation.");
+                        return;
+                    }
+                }
+            }
+            ValidationTarget::VoxelObject(id) => {
+                if let Some(state) = self.world_placements.as_mut() {
+                    if let Some(index) = state
+                        .voxel_objects
+                        .objects
+                        .iter()
+                        .position(|object| object.id == *id)
+                    {
+                        state.selected_voxel_object_index = index;
+                        state.active_selection = WorldPlacementKind::VoxelObject;
+                        self.editor_selection = EditorSelection::VoxelObject;
+                        self.world_subtab = WorldSubTab::Objects;
+                        self.workspace_tab = WorkspaceTab::World;
+                        self.status = format!("Focused voxel object '{id}' from validation.");
+                        return;
+                    }
+                }
+            }
+            ValidationTarget::SceneVoxelObject(id) => {
+                if let Some(scene_preview) = self.scene_voxel_preview.as_ref() {
+                    if let Some(index) = scene_preview
+                        .entries
+                        .iter()
+                        .position(|entry| entry.object_id == *id)
+                    {
+                        self.selected_scene_voxel_index = index;
+                        self.editor_selection = EditorSelection::SceneVoxelObject;
+                        self.world_subtab = WorldSubTab::Scene3d;
+                        self.workspace_tab = WorkspaceTab::World;
+                        self.status = format!("Focused scene voxel object '{id}' from validation.");
+                        return;
+                    }
+                }
+            }
+        }
+        self.status = format!("Validation target for {} could not be found.", issue.id);
     }
 
     fn draw_hot_reload_tab(&mut self, ui: &mut egui::Ui) {
@@ -7730,8 +9552,931 @@ impl StarlightRidgeEguiEditor {
             WorldSubTab::MapPaint => self.draw_world_preview_workspace(ui),
             WorldSubTab::Layers => self.draw_world_layers_workspace(ui),
             WorldSubTab::Objects => self.draw_world_objects_workspace(ui),
+            WorldSubTab::Scene3d => self.draw_world_scene3d_workspace(ui),
             WorldSubTab::TerrainRules => self.draw_worldgen_bake_workspace(ui),
         }
+    }
+
+    fn draw_world_scene3d_workspace(&mut self, ui: &mut egui::Ui) {
+        self.draw_workspace_header(
+            ui,
+            "World 3D Preview",
+            "Shared voxel render contract preview for the active map scene.",
+        );
+
+        ui.horizontal_wrapped(|ui| {
+            ui.label("3D tool");
+            ui.selectable_value(
+                &mut self.scene3d_tool,
+                Scene3dTool::Orbit,
+                Scene3dTool::Orbit.label(),
+            );
+            ui.selectable_value(
+                &mut self.scene3d_tool,
+                Scene3dTool::MoveVoxel,
+                Scene3dTool::MoveVoxel.label(),
+            );
+            ui.selectable_value(
+                &mut self.scene3d_tool,
+                Scene3dTool::ResizeVoxel,
+                Scene3dTool::ResizeVoxel.label(),
+            );
+            ui.selectable_value(
+                &mut self.scene3d_tool,
+                Scene3dTool::HeightVoxel,
+                Scene3dTool::HeightVoxel.label(),
+            );
+            ui.add(egui::Slider::new(&mut self.scene3d_yaw_degrees, -180.0..=180.0).text("Yaw"));
+            ui.add(egui::Slider::new(&mut self.scene3d_pitch_degrees, 15.0..=85.0).text("Pitch"));
+            ui.add(egui::Slider::new(&mut self.scene3d_zoom, 0.35..=2.4).text("Zoom"));
+            if ui.button("Reset view").clicked() {
+                self.scene3d_yaw_degrees = -35.0;
+                self.scene3d_pitch_degrees = 58.0;
+                self.scene3d_zoom = 1.0;
+            }
+        });
+
+        if let Some(render_data) = self.scene_voxel_render_data.as_ref() {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(if self.scene3d_gl_renderer.is_some() {
+                    "Embedded GL viewport"
+                } else {
+                    "CPU preview viewport"
+                });
+                ui.label(format!("{} vertices", render_data.vertices.len()));
+                ui.label(format!("{} triangles", render_data.indices.len() / 3));
+                ui.label(format!("{} pick ranges", render_data.object_ranges.len()));
+                ui.label(format!(
+                    "Bounds {:.1},{:.1},{:.1} -> {:.1},{:.1},{:.1}",
+                    render_data.bounds_min[0],
+                    render_data.bounds_min[1],
+                    render_data.bounds_min[2],
+                    render_data.bounds_max[0],
+                    render_data.bounds_max[1],
+                    render_data.bounds_max[2]
+                ));
+            });
+        } else {
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Terrain preview active");
+                ui.small("No scene voxel mesh payload is loaded yet; showing active map layers as a 3D world floor.");
+            });
+        }
+
+        let selected_scene_voxel = self
+            .scene_voxel_preview
+            .as_ref()
+            .and_then(|state| state.entries.get(self.selected_scene_voxel_index))
+            .map(|entry| {
+                (
+                    entry.object_id.clone(),
+                    entry.asset_id.clone(),
+                    entry.layer.clone(),
+                    entry.source_exists,
+                )
+            });
+        if let Some((object_id, asset_id, layer, source_exists)) = selected_scene_voxel {
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Selected");
+                ui.monospace(object_id);
+                ui.label(format!("asset {asset_id}"));
+                ui.label(format!("layer {layer}"));
+                ui.label(if source_exists {
+                    "source resolved"
+                } else {
+                    "source missing"
+                });
+                if ui.button("Inspector").clicked() {
+                    self.editor_selection = EditorSelection::SceneVoxelObject;
+                    self.right_tab = RightTab::Tile;
+                }
+                if ui.button("Object list").clicked() {
+                    self.editor_selection = EditorSelection::SceneVoxelObject;
+                    self.right_tab = RightTab::Tile;
+                    self.world_subtab = WorldSubTab::Objects;
+                }
+            });
+        }
+        if let Some(state) = self.world_placements.as_ref() {
+            if let Some(object) = state
+                .voxel_objects
+                .objects
+                .get(state.selected_voxel_object_index)
+                .filter(|_| self.editor_selection == EditorSelection::VoxelObject)
+            {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Selected voxel placement");
+                    ui.monospace(object.id.as_str());
+                    ui.label(format!("source {}", object.source_id));
+                    ui.label(format!(
+                        "footprint {:.1}x{:.1}x{:.1}",
+                        object.footprint_width, object.footprint_height, object.height
+                    ));
+                    if ui.button("Inspector").clicked() {
+                        self.editor_selection = EditorSelection::VoxelObject;
+                        self.right_tab = RightTab::Tile;
+                    }
+                    if ui.button("Object list").clicked() {
+                        self.world_subtab = WorldSubTab::Objects;
+                        self.right_tab = RightTab::Tile;
+                    }
+                });
+            }
+        }
+
+        self.consume_scene3d_gpu_pick_result();
+        let height = (ui.available_height() - 10.0).max(360.0);
+        let (rect, response) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width().max(420.0), height),
+            egui::Sense::click_and_drag(),
+        );
+        let viewport_rect = rect.shrink(16.0);
+        let pixels_per_point = ui.ctx().pixels_per_point();
+        let gl_viewport = VoxelEditorViewport {
+            width: (viewport_rect.width() * pixels_per_point).max(1.0).round() as u32,
+            height: (viewport_rect.height() * pixels_per_point).max(1.0).round() as u32,
+            yaw_degrees: self.scene3d_yaw_degrees,
+            pitch_degrees: self.scene3d_pitch_degrees,
+            zoom: self.scene3d_zoom,
+        };
+        let mut pending_gpu_pick = None;
+        if response.dragged() {
+            let delta = response.drag_delta();
+            let step_delta = delta - self.scene3d_last_drag_delta;
+            self.scene3d_last_drag_delta = delta;
+            match self.scene3d_tool {
+                Scene3dTool::Orbit => {
+                    self.scene3d_yaw_degrees =
+                        (self.scene3d_yaw_degrees + step_delta.x * 0.18).clamp(-180.0, 180.0);
+                    self.scene3d_pitch_degrees =
+                        (self.scene3d_pitch_degrees - step_delta.y * 0.12).clamp(15.0, 85.0);
+                }
+                Scene3dTool::MoveVoxel => {
+                    if !self.drag_selected_voxel_object_3d(viewport_rect, step_delta) {
+                        self.scene3d_yaw_degrees =
+                            (self.scene3d_yaw_degrees + step_delta.x * 0.18).clamp(-180.0, 180.0);
+                        self.scene3d_pitch_degrees =
+                            (self.scene3d_pitch_degrees - step_delta.y * 0.12).clamp(15.0, 85.0);
+                    }
+                }
+                Scene3dTool::ResizeVoxel => {
+                    if !self.drag_resize_selected_voxel_object_3d(viewport_rect, step_delta) {
+                        self.scene3d_yaw_degrees =
+                            (self.scene3d_yaw_degrees + step_delta.x * 0.18).clamp(-180.0, 180.0);
+                        self.scene3d_pitch_degrees =
+                            (self.scene3d_pitch_degrees - step_delta.y * 0.12).clamp(15.0, 85.0);
+                    }
+                }
+                Scene3dTool::HeightVoxel => {
+                    if !self.drag_height_selected_voxel_object_3d(viewport_rect, step_delta) {
+                        self.scene3d_yaw_degrees =
+                            (self.scene3d_yaw_degrees + step_delta.x * 0.18).clamp(-180.0, 180.0);
+                        self.scene3d_pitch_degrees =
+                            (self.scene3d_pitch_degrees - step_delta.y * 0.12).clamp(15.0, 85.0);
+                    }
+                }
+            }
+        } else {
+            self.scene3d_last_drag_delta = egui::Vec2::ZERO;
+        }
+        if response.clicked() {
+            if let Some(pointer) = response.interact_pointer_pos() {
+                if self.scene3d_gl_renderer.is_some() {
+                    let local = pointer - viewport_rect.min.to_vec2();
+                    let px = (local.x * pixels_per_point).round().max(0.0) as u32;
+                    let py = (local.y * pixels_per_point).round().max(0.0) as u32;
+                    pending_gpu_pick = Some((
+                        px.min(gl_viewport.width.saturating_sub(1)),
+                        py.min(gl_viewport.height.saturating_sub(1)),
+                    ));
+                    ui.ctx().request_repaint();
+                }
+                if !self.select_world_voxel_object_3d_at_pos(viewport_rect, pointer) {
+                    self.select_scene_voxel_3d_at_pos(viewport_rect, pointer);
+                }
+            }
+        }
+
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, 6.0, egui::Color32::from_rgb(13, 17, 24));
+        painter.rect_stroke(
+            rect,
+            6.0,
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(58, 72, 96)),
+            egui::StrokeKind::Inside,
+        );
+
+        self.paint_world_layer_3d_preview(&painter, viewport_rect);
+
+        let voxel_mesh_overlay_stale = self
+            .world_placements
+            .as_ref()
+            .is_some_and(|state| state.voxel_objects_dirty);
+        let render_data_for_gl = self
+            .scene_voxel_render_data
+            .as_ref()
+            .filter(|_| !voxel_mesh_overlay_stale)
+            .cloned();
+        let painted_gl_viewport = if let (Some(renderer), Some(render_data)) =
+            (self.scene3d_gl_renderer.clone(), render_data_for_gl)
+        {
+            let pick_result = self.scene3d_gl_pick_result.clone();
+            let callback = egui_glow::CallbackFn::new(move |_info, painter| {
+                let gl = painter.gl();
+                if let Ok(mut renderer) = renderer.lock() {
+                    if let Some((x, y)) = pending_gpu_pick {
+                        match renderer.pick_viewport(gl.as_ref(), &render_data, gl_viewport, x, y) {
+                            Ok(result) => {
+                                if let Ok(mut slot) = pick_result.lock() {
+                                    *slot = result;
+                                }
+                            }
+                            Err(error) => {
+                                log::warn!("embedded voxel GL pick failed: {error:#}");
+                            }
+                        }
+                        unsafe {
+                            gl.bind_framebuffer(
+                                egui_glow::glow::FRAMEBUFFER,
+                                painter.intermediate_fbo(),
+                            );
+                        }
+                    }
+                    renderer.draw_viewport(gl.as_ref(), &render_data, gl_viewport);
+                }
+            });
+            painter.add(egui::epaint::PaintCallback {
+                rect: viewport_rect,
+                callback: Arc::new(callback),
+            });
+            true
+        } else {
+            false
+        };
+        if let Some(render_data) = self
+            .scene_voxel_render_data
+            .as_ref()
+            .filter(|_| !voxel_mesh_overlay_stale)
+        {
+            if !painted_gl_viewport {
+                paint_voxel_render_data_preview(
+                    &painter,
+                    viewport_rect,
+                    render_data,
+                    self.scene3d_yaw_degrees,
+                    self.scene3d_pitch_degrees,
+                    self.scene3d_zoom,
+                );
+            }
+            self.paint_scene_voxel_3d_selection(&painter, viewport_rect, render_data);
+        } else if voxel_mesh_overlay_stale {
+            painter.text(
+                rect.left_top() + egui::vec2(8.0, 8.0),
+                egui::Align2::LEFT_TOP,
+                "Live voxel placement edits active - save/reload to refresh shared mesh payload",
+                egui::FontId::monospace(10.0),
+                egui::Color32::from_rgba_unmultiplied(255, 220, 128, 210),
+            );
+        } else {
+            painter.text(
+                rect.left_top() + egui::vec2(8.0, 8.0),
+                egui::Align2::LEFT_TOP,
+                "Map-layer 3D preview",
+                egui::FontId::monospace(10.0),
+                egui::Color32::from_rgba_unmultiplied(220, 230, 242, 190),
+            );
+        }
+    }
+
+    fn consume_scene3d_gpu_pick_result(&mut self) {
+        let pick = self
+            .scene3d_gl_pick_result
+            .lock()
+            .ok()
+            .and_then(|mut slot| slot.take());
+        if let Some(pick) = pick {
+            self.apply_scene3d_pick_result(pick);
+        }
+    }
+
+    fn apply_scene3d_pick_result(&mut self, pick: VoxelEditorPickResult) -> bool {
+        if let Some(object_id) = pick.object_key.strip_prefix("world:") {
+            if let Some(state) = self.world_placements.as_mut() {
+                if let Some(index) = state
+                    .voxel_objects
+                    .objects
+                    .iter()
+                    .position(|object| object.id == object_id)
+                {
+                    state.selected_voxel_object_index = index;
+                    state.active_selection = WorldPlacementKind::VoxelObject;
+                    self.editor_selection = EditorSelection::VoxelObject;
+                    self.right_tab = RightTab::Tile;
+                    self.status = format!("Selected voxel placement '{}'.", pick.label);
+                    return true;
+                }
+            }
+        }
+
+        if let Some(object_id) = pick.object_key.strip_prefix("scene:") {
+            if let Some(scene_preview) = self.scene_voxel_preview.as_ref() {
+                if let Some(index) = scene_preview
+                    .entries
+                    .iter()
+                    .position(|entry| entry.object_id == object_id)
+                {
+                    self.selected_scene_voxel_index = index;
+                    self.loaded_vox_cache = None;
+                    self.editor_selection = EditorSelection::SceneVoxelObject;
+                    self.right_tab = RightTab::Tile;
+                    self.status = format!("Selected scene voxel object '{}'.", pick.label);
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    fn paint_world_layer_3d_preview(&self, painter: &egui::Painter, rect: egui::Rect) {
+        let (map_width, map_height) = self.active_map_dimensions();
+        if map_width == 0 || map_height == 0 {
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "No active map dimensions",
+                egui::FontId::proportional(14.0),
+                egui::Color32::from_rgb(160, 174, 194),
+            );
+            return;
+        }
+
+        let bounds_min = [0.0, 0.0, -0.08];
+        let bounds_max = [map_width as f32, map_height as f32, 1.25];
+        let Some(camera) = VoxelRenderPreviewCamera::from_bounds(
+            rect,
+            bounds_min,
+            bounds_max,
+            self.scene3d_yaw_degrees,
+            self.scene3d_pitch_degrees,
+            self.scene3d_zoom,
+        ) else {
+            return;
+        };
+
+        self.paint_world_3d_base_grid(painter, rect, camera, map_width, map_height);
+
+        let Some(state) = self.editor_map.as_ref() else {
+            return;
+        };
+
+        #[derive(Clone, Copy)]
+        struct TerrainCell3d {
+            x: u32,
+            y: u32,
+            height: f32,
+            depth: f32,
+            color: egui::Color32,
+        }
+
+        let mut cells = Vec::new();
+        for y in 0..map_height {
+            for x in 0..map_width {
+                let Some(tile_id) = top_visible_tile_id_at(&state.layers, x, y) else {
+                    continue;
+                };
+                let color = self.tile_color_from_id(&tile_id);
+                let height = world_3d_tile_height(&tile_id);
+                let center = [x as f32 + 0.5, y as f32 + 0.5, height];
+                let (_, depth) = camera.project(center);
+                cells.push(TerrainCell3d {
+                    x,
+                    y,
+                    height,
+                    depth,
+                    color,
+                });
+            }
+        }
+
+        cells.sort_by(|a, b| {
+            a.depth
+                .partial_cmp(&b.depth)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let sample_step = (cells.len() / 4200).max(1);
+        let mut painted = 0usize;
+        for cell in cells.into_iter().step_by(sample_step) {
+            paint_world_3d_tile_prism(painter, camera, cell.x, cell.y, cell.height, cell.color);
+            painted += 1;
+        }
+
+        self.paint_world_3d_placement_markers(painter, camera);
+        self.paint_world_3d_voxel_objects(painter, camera);
+
+        painter.text(
+            rect.left_bottom() + egui::vec2(8.0, -8.0),
+            egui::Align2::LEFT_BOTTOM,
+            format!(
+                "{}x{} map floor | {} tile(s){}",
+                map_width,
+                map_height,
+                painted,
+                if sample_step > 1 { " sampled" } else { "" }
+            ),
+            egui::FontId::monospace(10.0),
+            egui::Color32::from_rgba_unmultiplied(220, 230, 242, 180),
+        );
+    }
+
+    fn select_world_voxel_object_3d_at_pos(&mut self, rect: egui::Rect, pos: egui::Pos2) -> bool {
+        let (map_width, map_height) = self.active_map_dimensions();
+        let Some(camera) = VoxelRenderPreviewCamera::from_bounds(
+            rect,
+            [0.0, 0.0, -0.08],
+            [map_width as f32, map_height as f32, 1.25],
+            self.scene3d_yaw_degrees,
+            self.scene3d_pitch_degrees,
+            self.scene3d_zoom,
+        ) else {
+            return false;
+        };
+        let Some(state) = self.world_placements.as_mut() else {
+            return false;
+        };
+
+        let mut hit = None;
+        for (index, object) in state.voxel_objects.objects.iter().enumerate() {
+            let screen_rect = world_voxel_object_3d_screen_rect(object, camera).expand(6.0);
+            if !screen_rect.contains(pos) {
+                continue;
+            }
+            let center = [
+                object.x + object.footprint_width.max(0.1) * 0.5,
+                object.y + object.footprint_height.max(0.1) * 0.5,
+                object.z + object.height.max(0.1) * 0.5,
+            ];
+            let depth = camera.project(center).1;
+            match hit {
+                Some((_, best_depth)) if depth <= best_depth => {}
+                _ => hit = Some((index, depth)),
+            }
+        }
+
+        if let Some((index, _)) = hit {
+            state.selected_voxel_object_index = index;
+            state.active_selection = WorldPlacementKind::VoxelObject;
+            self.editor_selection = EditorSelection::VoxelObject;
+            self.right_tab = RightTab::Tile;
+            if let Some(object) = state.voxel_objects.objects.get(index) {
+                self.status = format!("Selected voxel object '{}' in 3D preview.", object.id);
+            }
+            return true;
+        }
+        false
+    }
+
+    fn drag_selected_voxel_object_3d(&mut self, rect: egui::Rect, delta: egui::Vec2) -> bool {
+        if self.editor_selection != EditorSelection::VoxelObject {
+            return false;
+        }
+        if delta.length_sq() <= 0.0001 {
+            return true;
+        }
+
+        let (map_width, map_height) = self.active_map_dimensions();
+        let Some(camera) = VoxelRenderPreviewCamera::from_bounds(
+            rect,
+            [0.0, 0.0, -0.08],
+            [map_width as f32, map_height as f32, 1.25],
+            self.scene3d_yaw_degrees,
+            self.scene3d_pitch_degrees,
+            self.scene3d_zoom,
+        ) else {
+            return false;
+        };
+
+        let Some(state) = self.world_placements.as_mut() else {
+            return false;
+        };
+        let Some(object) = state
+            .voxel_objects
+            .objects
+            .get_mut(state.selected_voxel_object_index)
+        else {
+            return false;
+        };
+        if object.locked {
+            self.status = format!("Voxel object '{}' is locked.", object.id);
+            return true;
+        }
+
+        let (dx, dy) = scene3d_screen_delta_to_map_delta(camera, delta);
+
+        let max_x = (map_width as f32 - object.footprint_width.max(0.1)).max(0.0);
+        let max_y = (map_height as f32 - object.footprint_height.max(0.1)).max(0.0);
+        object.x = (object.x + dx).clamp(0.0, max_x);
+        object.y = (object.y + dy).clamp(0.0, max_y);
+        state.active_selection = WorldPlacementKind::VoxelObject;
+        state.voxel_objects_dirty = true;
+        self.status = format!(
+            "Moved voxel object '{}' in 3D to {:.2},{:.2}.",
+            object.id, object.x, object.y
+        );
+        true
+    }
+
+    fn drag_resize_selected_voxel_object_3d(
+        &mut self,
+        rect: egui::Rect,
+        delta: egui::Vec2,
+    ) -> bool {
+        if self.editor_selection != EditorSelection::VoxelObject {
+            return false;
+        }
+        if delta.length_sq() <= 0.0001 {
+            return true;
+        }
+
+        let (map_width, map_height) = self.active_map_dimensions();
+        let Some(camera) = VoxelRenderPreviewCamera::from_bounds(
+            rect,
+            [0.0, 0.0, -0.08],
+            [map_width as f32, map_height as f32, 1.25],
+            self.scene3d_yaw_degrees,
+            self.scene3d_pitch_degrees,
+            self.scene3d_zoom,
+        ) else {
+            return false;
+        };
+
+        let Some(state) = self.world_placements.as_mut() else {
+            return false;
+        };
+        let Some(object) = state
+            .voxel_objects
+            .objects
+            .get_mut(state.selected_voxel_object_index)
+        else {
+            return false;
+        };
+        if object.locked {
+            self.status = format!("Voxel object '{}' is locked.", object.id);
+            return true;
+        }
+
+        let (dx, dy) = scene3d_screen_delta_to_map_delta(camera, delta);
+        let max_width = (map_width as f32 - object.x).max(0.25);
+        let max_height = (map_height as f32 - object.y).max(0.25);
+        object.footprint_width = (object.footprint_width + dx).clamp(0.25, max_width);
+        object.footprint_height = (object.footprint_height + dy).clamp(0.25, max_height);
+        state.active_selection = WorldPlacementKind::VoxelObject;
+        state.voxel_objects_dirty = true;
+        self.status = format!(
+            "Resized voxel object '{}' in 3D to {:.2}x{:.2}.",
+            object.id, object.footprint_width, object.footprint_height
+        );
+        true
+    }
+
+    fn drag_height_selected_voxel_object_3d(
+        &mut self,
+        rect: egui::Rect,
+        delta: egui::Vec2,
+    ) -> bool {
+        if self.editor_selection != EditorSelection::VoxelObject {
+            return false;
+        }
+        if delta.length_sq() <= 0.0001 {
+            return true;
+        }
+
+        let (map_width, map_height) = self.active_map_dimensions();
+        let Some(camera) = VoxelRenderPreviewCamera::from_bounds(
+            rect,
+            [0.0, 0.0, -0.08],
+            [map_width as f32, map_height as f32, 1.25],
+            self.scene3d_yaw_degrees,
+            self.scene3d_pitch_degrees,
+            self.scene3d_zoom,
+        ) else {
+            return false;
+        };
+
+        let Some(state) = self.world_placements.as_mut() else {
+            return false;
+        };
+        let Some(object) = state
+            .voxel_objects
+            .objects
+            .get_mut(state.selected_voxel_object_index)
+        else {
+            return false;
+        };
+        if object.locked {
+            self.status = format!("Voxel object '{}' is locked.", object.id);
+            return true;
+        }
+
+        let dz = -delta.y / camera.scale.max(1.0);
+        object.height = (object.height + dz).clamp(0.25, 64.0);
+        state.active_selection = WorldPlacementKind::VoxelObject;
+        state.voxel_objects_dirty = true;
+        self.status = format!(
+            "Adjusted voxel object '{}' height in 3D to {:.2}.",
+            object.id, object.height
+        );
+        true
+    }
+
+    fn paint_world_3d_base_grid(
+        &self,
+        painter: &egui::Painter,
+        rect: egui::Rect,
+        camera: VoxelRenderPreviewCamera,
+        map_width: u32,
+        map_height: u32,
+    ) {
+        let grid_color = egui::Color32::from_rgba_unmultiplied(96, 116, 146, 82);
+        let border_color = egui::Color32::from_rgba_unmultiplied(142, 162, 194, 170);
+        let step = ((map_width.max(map_height) / 28).max(1)) as usize;
+        for x in (0..=map_width).step_by(step) {
+            let a = camera.project([x as f32, 0.0, 0.0]).0;
+            let b = camera.project([x as f32, map_height as f32, 0.0]).0;
+            if rect.expand(32.0).contains(a) || rect.expand(32.0).contains(b) {
+                painter.line_segment([a, b], egui::Stroke::new(1.0, grid_color));
+            }
+        }
+        for y in (0..=map_height).step_by(step) {
+            let a = camera.project([0.0, y as f32, 0.0]).0;
+            let b = camera.project([map_width as f32, y as f32, 0.0]).0;
+            if rect.expand(32.0).contains(a) || rect.expand(32.0).contains(b) {
+                painter.line_segment([a, b], egui::Stroke::new(1.0, grid_color));
+            }
+        }
+        let corners = [
+            camera.project([0.0, 0.0, 0.0]).0,
+            camera.project([map_width as f32, 0.0, 0.0]).0,
+            camera.project([map_width as f32, map_height as f32, 0.0]).0,
+            camera.project([0.0, map_height as f32, 0.0]).0,
+        ];
+        for (a, b) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
+            painter.line_segment(
+                [corners[a], corners[b]],
+                egui::Stroke::new(1.6, border_color),
+            );
+        }
+    }
+
+    fn paint_world_3d_placement_markers(
+        &self,
+        painter: &egui::Painter,
+        camera: VoxelRenderPreviewCamera,
+    ) {
+        let Some(placements) = self.world_placements.as_ref() else {
+            return;
+        };
+        for prop in &placements.props {
+            let pos = camera
+                .project([prop.x as f32 + 0.5, prop.y as f32 + 0.5, 0.72])
+                .0;
+            painter.circle_filled(pos, 4.0, egui::Color32::from_rgb(242, 188, 92));
+            painter.circle_stroke(
+                pos,
+                4.0,
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(38, 28, 12)),
+            );
+        }
+        for spawn in &placements.spawns {
+            let pos = camera
+                .project([spawn.x as f32 + 0.5, spawn.y as f32 + 0.5, 0.9])
+                .0;
+            painter.circle_filled(pos, 4.0, egui::Color32::from_rgb(234, 132, 182));
+            painter.circle_stroke(
+                pos,
+                4.0,
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(38, 18, 30)),
+            );
+        }
+        for trigger in &placements.triggers {
+            let center = [
+                trigger.x as f32 + trigger.w.max(1) as f32 * 0.5,
+                trigger.y as f32 + trigger.h.max(1) as f32 * 0.5,
+                0.45,
+            ];
+            let pos = camera.project(center).0;
+            painter.rect_filled(
+                egui::Rect::from_center_size(pos, egui::vec2(8.0, 8.0)),
+                1.0,
+                egui::Color32::from_rgba_unmultiplied(116, 192, 252, 210),
+            );
+        }
+    }
+
+    fn paint_world_3d_voxel_objects(
+        &self,
+        painter: &egui::Painter,
+        camera: VoxelRenderPreviewCamera,
+    ) {
+        let Some(placements) = self.world_placements.as_ref() else {
+            return;
+        };
+
+        #[derive(Clone, Copy)]
+        struct ObjectDraw<'a> {
+            index: usize,
+            object: &'a VoxelObjectPlacement,
+            depth: f32,
+        }
+
+        let mut objects = placements
+            .voxel_objects
+            .objects
+            .iter()
+            .enumerate()
+            .map(|(index, object)| {
+                let center = [
+                    object.x + object.footprint_width.max(0.1) * 0.5,
+                    object.y + object.footprint_height.max(0.1) * 0.5,
+                    object.z + object.height.max(0.1) * 0.5,
+                ];
+                ObjectDraw {
+                    index,
+                    object,
+                    depth: camera.project(center).1,
+                }
+            })
+            .collect::<Vec<_>>();
+        objects.sort_by(|a, b| {
+            a.depth
+                .partial_cmp(&b.depth)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        for draw in objects {
+            let selected = self.editor_selection == EditorSelection::VoxelObject
+                && placements.active_selection == WorldPlacementKind::VoxelObject
+                && placements.selected_voxel_object_index == draw.index;
+            paint_world_voxel_object_prism(painter, camera, draw.object, selected);
+        }
+    }
+
+    fn select_scene_voxel_3d_at_pos(&mut self, rect: egui::Rect, pos: egui::Pos2) {
+        let Some(scene_preview) = self.scene_voxel_preview.as_ref() else {
+            return;
+        };
+        let Some(render_data) = self.scene_voxel_render_data.as_ref() else {
+            return;
+        };
+        let local_pos = pos - rect.min.to_vec2();
+        if let Some(pick) = pick_voxel_object_by_projected_bounds(
+            render_data,
+            VoxelEditorViewport {
+                width: rect.width().max(1.0).round() as u32,
+                height: rect.height().max(1.0).round() as u32,
+                yaw_degrees: self.scene3d_yaw_degrees,
+                pitch_degrees: self.scene3d_pitch_degrees,
+                zoom: self.scene3d_zoom,
+            },
+            local_pos.x,
+            local_pos.y,
+        ) {
+            if let Some(object_id) = pick.object_key.strip_prefix("scene:") {
+                if let Some(index) = scene_preview
+                    .entries
+                    .iter()
+                    .position(|entry| entry.object_id == object_id)
+                {
+                    self.selected_scene_voxel_index = index;
+                    self.loaded_vox_cache = None;
+                    self.editor_selection = EditorSelection::SceneVoxelObject;
+                    self.right_tab = RightTab::Tile;
+                    self.status = format!("Selected scene voxel object '{}'.", pick.label);
+                    return;
+                }
+            }
+        }
+        let Some(camera) = VoxelRenderPreviewCamera::from_scene(
+            rect,
+            render_data,
+            self.scene3d_yaw_degrees,
+            self.scene3d_pitch_degrees,
+            self.scene3d_zoom,
+        ) else {
+            return;
+        };
+
+        let mut hit = None;
+        for (index, entry) in scene_preview.entries.iter().enumerate() {
+            let Some((screen_rect, depth)) = self.scene_voxel_entry_3d_screen_rect(entry, &camera)
+            else {
+                continue;
+            };
+            if screen_rect.expand(6.0).contains(pos) {
+                match hit {
+                    Some((_, best_depth)) if depth <= best_depth => {}
+                    _ => hit = Some((index, depth)),
+                }
+            }
+        }
+
+        if let Some((index, _)) = hit {
+            self.selected_scene_voxel_index = index;
+            self.loaded_vox_cache = None;
+            self.editor_selection = EditorSelection::SceneVoxelObject;
+            self.right_tab = RightTab::Tile;
+            if let Some(entry) = self
+                .scene_voxel_preview
+                .as_ref()
+                .and_then(|state| state.entries.get(index))
+            {
+                self.status = format!("Selected scene voxel object '{}'.", entry.object_id);
+            }
+        }
+    }
+
+    fn paint_scene_voxel_3d_selection(
+        &self,
+        painter: &egui::Painter,
+        rect: egui::Rect,
+        render_data: &VoxelSceneRenderData,
+    ) {
+        let Some(scene_preview) = self.scene_voxel_preview.as_ref() else {
+            return;
+        };
+        let Some(entry) = scene_preview.entries.get(self.selected_scene_voxel_index) else {
+            return;
+        };
+        let Some(camera) = VoxelRenderPreviewCamera::from_scene(
+            rect,
+            render_data,
+            self.scene3d_yaw_degrees,
+            self.scene3d_pitch_degrees,
+            self.scene3d_zoom,
+        ) else {
+            return;
+        };
+        let Some((screen_rect, _)) = self.scene_voxel_entry_3d_screen_rect(entry, &camera) else {
+            return;
+        };
+
+        painter.rect_stroke(
+            screen_rect.expand(5.0),
+            3.0,
+            egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 220, 112)),
+            egui::StrokeKind::Inside,
+        );
+        painter.text(
+            screen_rect.left_top() + egui::vec2(0.0, -6.0),
+            egui::Align2::LEFT_BOTTOM,
+            entry.object_id.as_str(),
+            egui::FontId::monospace(10.0),
+            egui::Color32::from_rgb(255, 226, 142),
+        );
+    }
+
+    fn scene_voxel_entry_3d_screen_rect(
+        &self,
+        entry: &SceneVoxelPreviewEntry,
+        camera: &VoxelRenderPreviewCamera,
+    ) -> Option<(egui::Rect, f32)> {
+        let tile_map = self.tile_map.as_ref()?;
+        let tile_width = tile_map.tile_width.max(1) as f32;
+        let tile_height = tile_map.tile_height.max(1) as f32;
+        let world_origin_x =
+            -((tile_map.map_width.max(1) * tile_map.tile_width.max(1)) as f32) * 0.5;
+        let world_origin_y =
+            -((tile_map.map_height.max(1) * tile_map.tile_height.max(1)) as f32) * 0.5;
+        let dims = self.scene_voxel_entry_dimensions_tiles(entry);
+        let size = [
+            (dims[0] * tile_width).max(tile_width * 0.25),
+            (dims[1] * tile_height).max(tile_height * 0.25),
+            (dims[2] * tile_height).max(tile_height * 0.25),
+        ];
+        let anchor = [
+            world_origin_x + entry.position[0] * tile_width,
+            world_origin_y + entry.position[1] * tile_height,
+            entry.position[2] * tile_height,
+        ];
+        let min = match entry.pivot_mode {
+            ScenePivotMode::FeetCenter => [
+                anchor[0] - size[0] * 0.5,
+                anchor[1] - size[1] * 0.5,
+                anchor[2],
+            ],
+            ScenePivotMode::GripPoint => anchor,
+        };
+        let max = [min[0] + size[0], min[1] + size[1], min[2] + size[2]];
+
+        let mut screen_rect = egui::Rect::NOTHING;
+        let mut depth = f32::NEG_INFINITY;
+        for corner in voxel_render_bounds_corners(min, max) {
+            let (point, corner_depth) = camera.project(corner);
+            screen_rect.extend_with(point);
+            depth = depth.max(corner_depth);
+        }
+        Some((screen_rect, depth))
     }
 
     fn draw_world_objects_workspace(&mut self, ui: &mut egui::Ui) {
@@ -7751,256 +10496,266 @@ impl StarlightRidgeEguiEditor {
             return;
         };
 
-        ui.horizontal_wrapped(|ui| {
-            ui.label(format!("Map: {}", state.map_id));
-            ui.label(format!("{} prop(s)", state.props.len()));
-            ui.label(format!("{} spawn(s)", state.spawns.len()));
-            ui.label(format!("{} trigger(s)", state.triggers.len()));
-            ui.label(format!(
-                "{} voxel object(s)",
-                state.voxel_objects.objects.len()
-            ));
-            let dirty = state.props_dirty
-                || state.spawns_dirty
-                || state.triggers_dirty
-                || state.voxel_objects_dirty;
-            ui.label(if dirty { "Dirty" } else { "Clean" });
+        {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(format!("Map: {}", state.map_id));
+                ui.label(format!("{} prop(s)", state.props.len()));
+                ui.label(format!("{} spawn(s)", state.spawns.len()));
+                ui.label(format!("{} trigger(s)", state.triggers.len()));
+                ui.label(format!(
+                    "{} voxel object(s)",
+                    state.voxel_objects.objects.len()
+                ));
+                let dirty = state.props_dirty
+                    || state.spawns_dirty
+                    || state.triggers_dirty
+                    || state.voxel_objects_dirty;
+                ui.label(if dirty { "Dirty" } else { "Clean" });
+                ui.separator();
+                ui.label("Show:");
+                ui.selectable_value(&mut self.world_object_filter, WorldObjectFilter::All, "All");
+                ui.selectable_value(
+                    &mut self.world_object_filter,
+                    WorldObjectFilter::Props,
+                    "Props",
+                );
+                ui.selectable_value(
+                    &mut self.world_object_filter,
+                    WorldObjectFilter::Spawns,
+                    "Spawns",
+                );
+                ui.selectable_value(
+                    &mut self.world_object_filter,
+                    WorldObjectFilter::Triggers,
+                    "Triggers",
+                );
+                ui.selectable_value(
+                    &mut self.world_object_filter,
+                    WorldObjectFilter::VoxelObjects,
+                    "Voxel Objects",
+                );
+            });
+
+            ui.horizontal_wrapped(|ui| {
+                if ui.button("Add prop").clicked() {
+                    state.add_prop();
+                    self.editor_selection = EditorSelection::Prop;
+                    self.world_object_filter = WorldObjectFilter::Props;
+                }
+                if ui.button("Add spawn").clicked() {
+                    state.add_spawn();
+                    self.editor_selection = EditorSelection::Spawn;
+                    self.world_object_filter = WorldObjectFilter::Spawns;
+                }
+                if ui.button("Add trigger").clicked() {
+                    state.add_trigger();
+                    self.editor_selection = EditorSelection::Trigger;
+                    self.world_object_filter = WorldObjectFilter::Triggers;
+                }
+                if ui.button("Add voxel object").clicked() {
+                    state.add_voxel_object();
+                    self.editor_selection = EditorSelection::VoxelObject;
+                    self.world_object_filter = WorldObjectFilter::VoxelObjects;
+                }
+                if ui.button("Duplicate selected").clicked() {
+                    duplicate_requested = true;
+                }
+                if ui.button("Remove selected").clicked() {
+                    remove_requested = true;
+                }
+                ui.small("Edit details in the right inspector. Save/reload in command strip.");
+            });
+
             ui.separator();
-            ui.label("Show:");
-            ui.selectable_value(&mut self.world_object_filter, WorldObjectFilter::All, "All");
-            ui.selectable_value(
-                &mut self.world_object_filter,
-                WorldObjectFilter::Props,
-                "Props",
-            );
-            ui.selectable_value(
-                &mut self.world_object_filter,
-                WorldObjectFilter::Spawns,
-                "Spawns",
-            );
-            ui.selectable_value(
-                &mut self.world_object_filter,
-                WorldObjectFilter::Triggers,
-                "Triggers",
-            );
-            ui.selectable_value(
-                &mut self.world_object_filter,
-                WorldObjectFilter::VoxelObjects,
-                "Voxel Objects",
-            );
-        });
+            ui.columns(2, |columns| {
+                columns[0].heading("Object list");
+                egui::ScrollArea::vertical()
+                    .id_salt("world_object_list")
+                    .show(&mut columns[0], |ui| {
+                        if matches!(
+                            self.world_object_filter,
+                            WorldObjectFilter::All | WorldObjectFilter::Props
+                        ) {
+                            ui.strong("Props");
+                            for (index, prop) in state.props.iter().enumerate() {
+                                let selected = self.editor_selection == EditorSelection::Prop
+                                    && state.selected_prop_index == index;
+                                if ui
+                                    .selectable_label(
+                                        selected,
+                                        format!(
+                                            "{} - {} @ {},{}",
+                                            prop.id, prop.kind, prop.x, prop.y
+                                        ),
+                                    )
+                                    .clicked()
+                                {
+                                    state.selected_prop_index = index;
+                                    state.active_selection = WorldPlacementKind::Prop;
+                                    self.editor_selection = EditorSelection::Prop;
+                                }
+                            }
+                            ui.add_space(6.0);
+                        }
 
-        ui.horizontal_wrapped(|ui| {
-            if ui.button("Add prop").clicked() {
-                state.add_prop();
-                self.editor_selection = EditorSelection::Prop;
-                self.world_object_filter = WorldObjectFilter::Props;
-            }
-            if ui.button("Add spawn").clicked() {
-                state.add_spawn();
-                self.editor_selection = EditorSelection::Spawn;
-                self.world_object_filter = WorldObjectFilter::Spawns;
-            }
-            if ui.button("Add trigger").clicked() {
-                state.add_trigger();
-                self.editor_selection = EditorSelection::Trigger;
-                self.world_object_filter = WorldObjectFilter::Triggers;
-            }
-            if ui.button("Add voxel object").clicked() {
-                state.add_voxel_object();
-                self.editor_selection = EditorSelection::VoxelObject;
-                self.world_object_filter = WorldObjectFilter::VoxelObjects;
-            }
-            if ui.button("Duplicate selected").clicked() {
-                duplicate_requested = true;
-            }
-            if ui.button("Remove selected").clicked() {
-                remove_requested = true;
-            }
-            ui.small("Edit details in the right inspector. Save/reload in command strip.");
-        });
+                        if matches!(
+                            self.world_object_filter,
+                            WorldObjectFilter::All | WorldObjectFilter::Spawns
+                        ) {
+                            ui.strong("Spawns");
+                            for (index, spawn) in state.spawns.iter().enumerate() {
+                                let selected = self.editor_selection == EditorSelection::Spawn
+                                    && state.selected_spawn_index == index;
+                                if ui
+                                    .selectable_label(
+                                        selected,
+                                        format!(
+                                            "{} - {} @ {},{}",
+                                            spawn.id, spawn.kind, spawn.x, spawn.y
+                                        ),
+                                    )
+                                    .clicked()
+                                {
+                                    state.selected_spawn_index = index;
+                                    state.active_selection = WorldPlacementKind::Spawn;
+                                    self.editor_selection = EditorSelection::Spawn;
+                                }
+                            }
+                            ui.add_space(6.0);
+                        }
 
-        ui.separator();
-        ui.columns(2, |columns| {
-            columns[0].heading("Object list");
-            egui::ScrollArea::vertical()
-                .id_salt("world_object_list")
-                .show(&mut columns[0], |ui| {
-                    if matches!(
-                        self.world_object_filter,
-                        WorldObjectFilter::All | WorldObjectFilter::Props
-                    ) {
-                        ui.strong("Props");
-                        for (index, prop) in state.props.iter().enumerate() {
-                            let selected = self.editor_selection == EditorSelection::Prop
-                                && state.selected_prop_index == index;
-                            if ui
-                                .selectable_label(
-                                    selected,
-                                    format!("{} - {} @ {},{}", prop.id, prop.kind, prop.x, prop.y),
-                                )
-                                .clicked()
-                            {
-                                state.selected_prop_index = index;
-                                state.active_selection = WorldPlacementKind::Prop;
-                                self.editor_selection = EditorSelection::Prop;
+                        if matches!(
+                            self.world_object_filter,
+                            WorldObjectFilter::All | WorldObjectFilter::Triggers
+                        ) {
+                            ui.strong("Triggers");
+                            for (index, trigger) in state.triggers.iter().enumerate() {
+                                let selected = self.editor_selection == EditorSelection::Trigger
+                                    && state.selected_trigger_index == index;
+                                if ui
+                                    .selectable_label(
+                                        selected,
+                                        format!(
+                                            "{} - {} -> {} @ {},{} {}x{}",
+                                            trigger.id,
+                                            trigger.kind,
+                                            trigger.target_map,
+                                            trigger.x,
+                                            trigger.y,
+                                            trigger.w,
+                                            trigger.h
+                                        ),
+                                    )
+                                    .clicked()
+                                {
+                                    state.selected_trigger_index = index;
+                                    state.active_selection = WorldPlacementKind::Trigger;
+                                    self.editor_selection = EditorSelection::Trigger;
+                                }
+                            }
+                            ui.add_space(6.0);
+                        }
+
+                        if matches!(
+                            self.world_object_filter,
+                            WorldObjectFilter::All | WorldObjectFilter::VoxelObjects
+                        ) {
+                            ui.strong("Voxel Objects");
+                            for (index, object) in state.voxel_objects.objects.iter().enumerate() {
+                                let selected = self.editor_selection
+                                    == EditorSelection::VoxelObject
+                                    && state.selected_voxel_object_index == index;
+                                if ui
+                                    .selectable_label(
+                                        selected,
+                                        format!(
+                                            "{} - {} @ {:.1},{:.1},{:.1}",
+                                            object.id,
+                                            object.source_id,
+                                            object.x,
+                                            object.y,
+                                            object.z
+                                        ),
+                                    )
+                                    .clicked()
+                                {
+                                    state.selected_voxel_object_index = index;
+                                    state.active_selection = WorldPlacementKind::VoxelObject;
+                                    self.editor_selection = EditorSelection::VoxelObject;
+                                }
                             }
                         }
-                        ui.add_space(6.0);
-                    }
+                    });
 
-                    if matches!(
-                        self.world_object_filter,
-                        WorldObjectFilter::All | WorldObjectFilter::Spawns
-                    ) {
-                        ui.strong("Spawns");
-                        for (index, spawn) in state.spawns.iter().enumerate() {
-                            let selected = self.editor_selection == EditorSelection::Spawn
-                                && state.selected_spawn_index == index;
-                            if ui
-                                .selectable_label(
-                                    selected,
-                                    format!(
-                                        "{} - {} @ {},{}",
-                                        spawn.id, spawn.kind, spawn.x, spawn.y
-                                    ),
-                                )
-                                .clicked()
-                            {
-                                state.selected_spawn_index = index;
-                                state.active_selection = WorldPlacementKind::Spawn;
-                                self.editor_selection = EditorSelection::Spawn;
-                            }
-                        }
-                        ui.add_space(6.0);
-                    }
-
-                    if matches!(
-                        self.world_object_filter,
-                        WorldObjectFilter::All | WorldObjectFilter::Triggers
-                    ) {
-                        ui.strong("Triggers");
-                        for (index, trigger) in state.triggers.iter().enumerate() {
-                            let selected = self.editor_selection == EditorSelection::Trigger
-                                && state.selected_trigger_index == index;
-                            if ui
-                                .selectable_label(
-                                    selected,
-                                    format!(
-                                        "{} - {} -> {} @ {},{} {}x{}",
-                                        trigger.id,
-                                        trigger.kind,
-                                        trigger.target_map,
-                                        trigger.x,
-                                        trigger.y,
-                                        trigger.w,
-                                        trigger.h
-                                    ),
-                                )
-                                .clicked()
-                            {
-                                state.selected_trigger_index = index;
-                                state.active_selection = WorldPlacementKind::Trigger;
-                                self.editor_selection = EditorSelection::Trigger;
-                            }
-                        }
-                        ui.add_space(6.0);
-                    }
-
-                    if matches!(
-                        self.world_object_filter,
-                        WorldObjectFilter::All | WorldObjectFilter::VoxelObjects
-                    ) {
-                        ui.strong("Voxel Objects");
-                        for (index, object) in state.voxel_objects.objects.iter().enumerate() {
-                            let selected = self.editor_selection == EditorSelection::VoxelObject
-                                && state.selected_voxel_object_index == index;
-                            if ui
-                                .selectable_label(
-                                    selected,
-                                    format!(
-                                        "{} - {} @ {:.1},{:.1},{:.1}",
-                                        object.id, object.source_id, object.x, object.y, object.z
-                                    ),
-                                )
-                                .clicked()
-                            {
-                                state.selected_voxel_object_index = index;
-                                state.active_selection = WorldPlacementKind::VoxelObject;
-                                self.editor_selection = EditorSelection::VoxelObject;
-                            }
+                columns[1].heading("Selected object");
+                match self.editor_selection {
+                    EditorSelection::Prop => {
+                        if let Some(prop) = state.props.get(state.selected_prop_index) {
+                            columns[1].label("Type: Prop");
+                            columns[1].label(format!("ID: {}", prop.id));
+                            columns[1].label(format!("Kind: {}", prop.kind));
+                            columns[1].label(format!("Position: {},{}", prop.x, prop.y));
+                        } else {
+                            columns[1].label("No prop selected.");
                         }
                     }
-                });
-
-            columns[1].heading("Selected object");
-            match self.editor_selection {
-                EditorSelection::Prop => {
-                    if let Some(prop) = state.props.get(state.selected_prop_index) {
-                        columns[1].label("Type: Prop");
-                        columns[1].label(format!("ID: {}", prop.id));
-                        columns[1].label(format!("Kind: {}", prop.kind));
-                        columns[1].label(format!("Position: {},{}", prop.x, prop.y));
-                    } else {
-                        columns[1].label("No prop selected.");
+                    EditorSelection::Spawn => {
+                        if let Some(spawn) = state.spawns.get(state.selected_spawn_index) {
+                            columns[1].label("Type: Spawn");
+                            columns[1].label(format!("ID: {}", spawn.id));
+                            columns[1].label(format!("Kind: {}", spawn.kind));
+                            columns[1].label(format!("Position: {},{}", spawn.x, spawn.y));
+                            columns[1].label(format!(
+                                "Ref: {}",
+                                spawn.ref_id.as_deref().unwrap_or("<none>")
+                            ));
+                        } else {
+                            columns[1].label("No spawn selected.");
+                        }
+                    }
+                    EditorSelection::Trigger => {
+                        if let Some(trigger) = state.triggers.get(state.selected_trigger_index) {
+                            columns[1].label("Type: Trigger");
+                            columns[1].label(format!("ID: {}", trigger.id));
+                            columns[1].label(format!("Kind: {}", trigger.kind));
+                            columns[1].label(format!("Target: {}", trigger.target_map));
+                            columns[1].label(format!(
+                                "Bounds: {},{} {}x{}",
+                                trigger.x, trigger.y, trigger.w, trigger.h
+                            ));
+                        } else {
+                            columns[1].label("No trigger selected.");
+                        }
+                    }
+                    EditorSelection::VoxelObject => {
+                        if let Some(object) = state
+                            .voxel_objects
+                            .objects
+                            .get(state.selected_voxel_object_index)
+                        {
+                            columns[1].label("Type: Voxel Object");
+                            columns[1].label(format!("ID: {}", object.id));
+                            columns[1].label(format!("Source: {}", object.source_id));
+                            columns[1].label(format!(
+                                "Position: {:.1},{:.1},{:.1}",
+                                object.x, object.y, object.z
+                            ));
+                            columns[1].label(format!(
+                                "Footprint: {:.1}x{:.1}, h {:.1}",
+                                object.footprint_width, object.footprint_height, object.height
+                            ));
+                        } else {
+                            columns[1].label("No voxel object selected.");
+                        }
+                    }
+                    _ => {
+                        columns[1].label(
+                            "Select a prop, spawn, trigger, or voxel object from the list or map.",
+                        );
                     }
                 }
-                EditorSelection::Spawn => {
-                    if let Some(spawn) = state.spawns.get(state.selected_spawn_index) {
-                        columns[1].label("Type: Spawn");
-                        columns[1].label(format!("ID: {}", spawn.id));
-                        columns[1].label(format!("Kind: {}", spawn.kind));
-                        columns[1].label(format!("Position: {},{}", spawn.x, spawn.y));
-                        columns[1].label(format!(
-                            "Ref: {}",
-                            spawn.ref_id.as_deref().unwrap_or("<none>")
-                        ));
-                    } else {
-                        columns[1].label("No spawn selected.");
-                    }
-                }
-                EditorSelection::Trigger => {
-                    if let Some(trigger) = state.triggers.get(state.selected_trigger_index) {
-                        columns[1].label("Type: Trigger");
-                        columns[1].label(format!("ID: {}", trigger.id));
-                        columns[1].label(format!("Kind: {}", trigger.kind));
-                        columns[1].label(format!("Target: {}", trigger.target_map));
-                        columns[1].label(format!(
-                            "Bounds: {},{} {}x{}",
-                            trigger.x, trigger.y, trigger.w, trigger.h
-                        ));
-                    } else {
-                        columns[1].label("No trigger selected.");
-                    }
-                }
-                EditorSelection::VoxelObject => {
-                    if let Some(object) = state
-                        .voxel_objects
-                        .objects
-                        .get(state.selected_voxel_object_index)
-                    {
-                        columns[1].label("Type: Voxel Object");
-                        columns[1].label(format!("ID: {}", object.id));
-                        columns[1].label(format!("Source: {}", object.source_id));
-                        columns[1].label(format!(
-                            "Position: {:.1},{:.1},{:.1}",
-                            object.x, object.y, object.z
-                        ));
-                        columns[1].label(format!(
-                            "Footprint: {:.1}x{:.1}, h {:.1}",
-                            object.footprint_width, object.footprint_height, object.height
-                        ));
-                    } else {
-                        columns[1].label("No voxel object selected.");
-                    }
-                }
-                _ => {
-                    columns[1].label(
-                        "Select a prop, spawn, trigger, or voxel object from the list or map.",
-                    );
-                }
-            }
-        });
+            });
+        }
 
         if duplicate_requested {
             self.duplicate_active_world_placement();
@@ -8008,6 +10763,320 @@ impl StarlightRidgeEguiEditor {
         if remove_requested {
             self.delete_active_world_placement();
         }
+
+        ui.separator();
+        ui.heading("Scene voxel runtime preview");
+        let Some(scene_preview) = self.scene_voxel_preview.as_ref() else {
+            ui.label("No scene voxel object set found for the active map.");
+            ui.small("Expected: content/scenes/<map>/voxel_objects.ron with asset sources in content/voxel_assets/voxel_asset_registry.ron.");
+            return;
+        };
+
+        ui.horizontal_wrapped(|ui| {
+            ui.label(format!("Scene: {}", scene_preview.scene_id));
+            ui.label(format!("Set: {}", scene_preview.set_id));
+            ui.label(format!("Phase: {}", scene_preview.phase));
+            ui.label(format!("{} object(s)", scene_preview.entries.len()));
+            let resolved = scene_preview
+                .entries
+                .iter()
+                .filter(|entry| entry.source_exists)
+                .count();
+            ui.label(format!("{resolved} source(s) resolved"));
+        });
+
+        if let Some(render_data) = self.scene_voxel_render_data.as_ref() {
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Shared render contract:");
+                ui.label(format!("{} vertices", render_data.vertices.len()));
+                ui.label(format!("{} indices", render_data.indices.len()));
+                ui.label(format!(
+                    "Bounds {:.1},{:.1},{:.1} -> {:.1},{:.1},{:.1}",
+                    render_data.bounds_min[0],
+                    render_data.bounds_min[1],
+                    render_data.bounds_min[2],
+                    render_data.bounds_max[0],
+                    render_data.bounds_max[1],
+                    render_data.bounds_max[2]
+                ));
+            });
+        } else {
+            ui.small("Shared render contract is not ready yet for this scene.");
+        }
+
+        let mut selected_scene_model_available = false;
+        if let Some(entry) = scene_preview.entries.get(self.selected_scene_voxel_index) {
+            if entry.source_exists {
+                let cache_key = format!("scene:{}", entry.object_id);
+                if self
+                    .loaded_vox_cache
+                    .as_ref()
+                    .map(|(id, _)| id != &cache_key)
+                    .unwrap_or(true)
+                {
+                    if let Ok(model) = load_vox_file(&entry.source_path) {
+                        self.loaded_vox_cache = Some((cache_key.clone(), model));
+                    }
+                }
+                selected_scene_model_available = self
+                    .loaded_vox_cache
+                    .as_ref()
+                    .map(|(id, _)| id == &cache_key)
+                    .unwrap_or(false);
+            }
+        }
+
+        ui.columns(2, |columns| {
+            columns[0].heading("Scene objects");
+            egui::ScrollArea::vertical()
+                .id_salt("scene_voxel_preview_list")
+                .max_height(260.0)
+                .show(&mut columns[0], |ui| {
+                    for (index, entry) in scene_preview.entries.iter().enumerate() {
+                        let selected = self.selected_scene_voxel_index == index;
+                        let label = format!(
+                            "{} - {} @ {:.1},{:.1},{:.1}{}",
+                            entry.object_id,
+                            entry.asset_id,
+                            entry.position[0],
+                            entry.position[1],
+                            entry.position[2],
+                            if entry.source_exists {
+                                ""
+                            } else {
+                                " (missing source)"
+                            }
+                        );
+                        if ui.selectable_label(selected, label).clicked() {
+                            self.selected_scene_voxel_index = index;
+                            self.loaded_vox_cache = None;
+                            self.editor_selection = EditorSelection::SceneVoxelObject;
+                            self.right_tab = RightTab::Tile;
+                        }
+                    }
+                });
+
+            columns[1].heading("Selected scene object");
+            if let Some(entry) = scene_preview.entries.get(self.selected_scene_voxel_index) {
+                egui::Grid::new("scene_voxel_preview_details")
+                    .striped(true)
+                    .show(&mut columns[1], |ui| {
+                        ui.label("Object ID");
+                        ui.monospace(entry.object_id.as_str());
+                        ui.end_row();
+                        ui.label("Asset ID");
+                        ui.monospace(entry.asset_id.as_str());
+                        ui.end_row();
+                        ui.label("Source");
+                        ui.monospace(entry.relative_source_path.as_str());
+                        ui.end_row();
+                        ui.label("Position");
+                        ui.label(format!(
+                            "{:.2}, {:.2}, {:.2}",
+                            entry.position[0], entry.position[1], entry.position[2]
+                        ));
+                        ui.end_row();
+                        ui.label("Rotation");
+                        ui.label(format!(
+                            "{:.1}, {:.1}, {:.1}",
+                            entry.rotation_degrees[0],
+                            entry.rotation_degrees[1],
+                            entry.rotation_degrees[2]
+                        ));
+                        ui.end_row();
+                        ui.label("Scale");
+                        ui.label(format!("{:.2}", entry.scale));
+                        ui.end_row();
+                        ui.label("Asset scale");
+                        ui.label(format!("{:.2}", entry.asset_scale));
+                        ui.end_row();
+                        ui.label("Voxels / tile");
+                        ui.label(entry.voxels_per_tile.to_string());
+                        ui.end_row();
+                        ui.label("Pivot");
+                        ui.label(format!(
+                            "{:?} @ {:.1}, {:.1}, {:.1}",
+                            entry.pivot_mode,
+                            entry.pivot_offset[0],
+                            entry.pivot_offset[1],
+                            entry.pivot_offset[2]
+                        ));
+                        ui.end_row();
+                        ui.label("Layer");
+                        ui.label(entry.layer.as_str());
+                        ui.end_row();
+                        ui.label("Collision");
+                        ui.label(if entry.collision_enabled {
+                            "Enabled"
+                        } else {
+                            "Disabled"
+                        });
+                        ui.end_row();
+                        ui.label("Interaction");
+                        ui.label(entry.interaction_id.as_deref().unwrap_or("<none>"));
+                        ui.end_row();
+                        ui.label("Tags");
+                        ui.label(if entry.tags.is_empty() {
+                            "<none>".to_string()
+                        } else {
+                            entry.tags.join(", ")
+                        });
+                        ui.end_row();
+                    });
+
+                columns[1].separator();
+                if !entry.source_exists {
+                    columns[1].label("Source .vox file is missing for this scene object.");
+                } else {
+                    let cache_key = format!("scene:{}", entry.object_id);
+                    if let Some((id, model)) = self.loaded_vox_cache.as_ref() {
+                        if id != &cache_key {
+                            columns[1].label("Selected source preview is still loading.");
+                        } else {
+                            let preview_size = egui::vec2(280.0, 280.0);
+                            let (preview_rect, _) =
+                                columns[1].allocate_exact_size(preview_size, egui::Sense::hover());
+                            let painter = columns[1].painter_at(preview_rect);
+                            painter.rect_filled(
+                                preview_rect,
+                                4.0,
+                                egui::Color32::from_rgb(18, 22, 30),
+                            );
+                            draw_vox_isometric_preview(&painter, preview_rect, model);
+                        }
+                    } else {
+                        columns[1].label("Failed to load source preview.");
+                    }
+                }
+            } else {
+                columns[1].label("No scene voxel object selected.");
+            }
+        });
+
+        ui.separator();
+        ui.heading("Scene layout preview");
+        let preview_size = egui::vec2(ui.available_width().max(320.0), 320.0);
+        let (preview_rect, response) = ui.allocate_exact_size(preview_size, egui::Sense::click());
+        let painter = ui.painter_at(preview_rect);
+        painter.rect_filled(preview_rect, 8.0, egui::Color32::from_rgb(18, 22, 30));
+        painter.rect_stroke(
+            preview_rect,
+            8.0,
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(58, 72, 96)),
+            egui::StrokeKind::Inside,
+        );
+        let selected_scene_model = if selected_scene_model_available {
+            self.loaded_vox_cache.as_ref().map(|(_, model)| model)
+        } else {
+            None
+        };
+        self.draw_scene_voxel_layout_preview(&painter, preview_rect, selected_scene_model);
+        if response.clicked() {
+            if let Some(pointer) = response.interact_pointer_pos() {
+                self.select_scene_voxel_preview_at_pos(preview_rect, pointer);
+            }
+        }
+    }
+
+    fn draw_scene_voxel_layout_preview(
+        &self,
+        painter: &egui::Painter,
+        rect: egui::Rect,
+        selected_model: Option<&VoxModel>,
+    ) {
+        let Some(scene_preview) = self.scene_voxel_preview.as_ref() else {
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "No scene voxel objects loaded",
+                egui::FontId::proportional(16.0),
+                egui::Color32::from_rgb(210, 220, 232),
+            );
+            return;
+        };
+
+        let (map_width, map_height) = self.active_map_dimensions();
+        let cell = ((rect.width() / map_width.max(1) as f32)
+            .min(rect.height() / map_height.max(1) as f32)
+            * 0.95)
+            .clamp(10.0, 28.0);
+        let center = egui::pos2(rect.center().x, rect.bottom() - 28.0);
+
+        let grid_color = egui::Color32::from_rgba_unmultiplied(105, 126, 156, 48);
+        for x in 0..=map_width {
+            let a = scene_iso_project([x as f32, 0.0, 0.0], cell, center);
+            let b = scene_iso_project([x as f32, map_height as f32, 0.0], cell, center);
+            painter.line_segment([a, b], egui::Stroke::new(1.0, grid_color));
+        }
+        for y in 0..=map_height {
+            let a = scene_iso_project([0.0, y as f32, 0.0], cell, center);
+            let b = scene_iso_project([map_width as f32, y as f32, 0.0], cell, center);
+            painter.line_segment([a, b], egui::Stroke::new(1.0, grid_color));
+        }
+
+        for (index, entry) in scene_preview.entries.iter().enumerate() {
+            let dims = self.scene_voxel_entry_dimensions_tiles(entry);
+            let selected = self.selected_scene_voxel_index == index;
+            paint_scene_voxel_box(painter, entry, dims, cell, center, selected);
+            if selected {
+                if let Some(model) = selected_model {
+                    paint_scene_vox_model(painter, entry, model, cell, center);
+                }
+            }
+        }
+
+        painter.text(
+            rect.left_top() + egui::vec2(12.0, 10.0),
+            egui::Align2::LEFT_TOP,
+            "Click a scene voxel object to select it",
+            egui::FontId::monospace(10.0),
+            egui::Color32::from_rgba_unmultiplied(210, 220, 232, 190),
+        );
+    }
+
+    fn select_scene_voxel_preview_at_pos(&mut self, rect: egui::Rect, pos: egui::Pos2) {
+        let Some(scene_preview) = self.scene_voxel_preview.as_ref() else {
+            return;
+        };
+        let (map_width, map_height) = self.active_map_dimensions();
+        let cell = ((rect.width() / map_width.max(1) as f32)
+            .min(rect.height() / map_height.max(1) as f32)
+            * 0.95)
+            .clamp(10.0, 28.0);
+        let center = egui::pos2(rect.center().x, rect.bottom() - 28.0);
+
+        let mut hit = None;
+        for (index, entry) in scene_preview.entries.iter().enumerate().rev() {
+            let dims = self.scene_voxel_entry_dimensions_tiles(entry);
+            if scene_voxel_entry_screen_rect(entry, dims, cell, center).contains(pos) {
+                hit = Some(index);
+                break;
+            }
+        }
+        if let Some(index) = hit {
+            self.selected_scene_voxel_index = index;
+            self.loaded_vox_cache = None;
+            self.editor_selection = EditorSelection::SceneVoxelObject;
+            self.right_tab = RightTab::Tile;
+        }
+    }
+
+    fn scene_voxel_entry_dimensions_tiles(&self, entry: &SceneVoxelPreviewEntry) -> [f32; 3] {
+        let Some(asset) = self
+            .vox_assets
+            .iter()
+            .find(|asset| asset.id == entry.asset_id)
+        else {
+            let scale = entry.scale.max(0.1) * entry.asset_scale.max(0.1);
+            return [scale, scale, scale];
+        };
+        let voxels_per_tile = entry.voxels_per_tile.max(1) as f32;
+        let scale = entry.scale.max(0.1) * entry.asset_scale.max(0.1);
+        [
+            asset.width as f32 / voxels_per_tile * scale,
+            asset.height as f32 / voxels_per_tile * scale,
+            asset.depth as f32 / voxels_per_tile * scale,
+        ]
     }
 
     fn draw_worldgen_bake_workspace(&mut self, ui: &mut egui::Ui) {
@@ -9489,6 +12558,8 @@ impl StarlightRidgeEguiEditor {
         }
         self.voxel_panel_designer
             .selected_composition_instance_index = next_instance;
+        self.voxel_panel_designer
+            .sync_selected_panel_to_selected_composition_instance();
 
         ui.horizontal(|ui| {
             if ui.button("Add selected panel").clicked() {
@@ -10016,6 +13087,12 @@ impl StarlightRidgeEguiEditor {
             if let Some(index) = hit_instance_index {
                 self.voxel_panel_designer
                     .selected_composition_instance_index = index;
+                self.voxel_panel_designer
+                    .sync_selected_panel_to_selected_composition_instance();
+                if response.drag_started() {
+                    self.voxel_panel_designer
+                        .push_composition_undo("2D composition drag move");
+                }
             }
         }
         if response.dragged() {
@@ -10036,7 +13113,7 @@ impl StarlightRidgeEguiEditor {
 
     fn draw_voxel_panel_3d_preview_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("3D Preview");
-        ui.small("Phase 53k read-only inspection preview: exported Phase 53i RON with grid, axis, material legend, hover labels, selection highlights, and diagnostics.");
+        ui.small("Phase 53m 3D composition editing: click instances/sockets, Shift-click sockets or use Begin Connection to wire sockets, drag XYZ handles, or nudge/duplicate/delete selected instances.");
 
         ui.horizontal_wrapped(|ui| {
             if ui.button("Export + load").clicked() {
@@ -10165,7 +13242,7 @@ impl StarlightRidgeEguiEditor {
             ui.checkbox(&mut camera.show_diagnostics, "Diagnostics");
         });
 
-        let Some(export) = self.voxel_panel_designer.preview_3d_export.clone() else {
+        let Some(mut export) = self.voxel_panel_designer.preview_3d_export.clone() else {
             ui.label("No Phase 53i preview RON loaded yet.");
             if let Some(path) = self
                 .voxel_panel_designer
@@ -10194,18 +13271,544 @@ impl StarlightRidgeEguiEditor {
             ));
         });
 
+        ui.horizontal_wrapped(|ui| {
+            ui.add(
+                egui::DragValue::new(&mut self.voxel_panel_designer.transform_grid_snap)
+                    .speed(1.0)
+                    .range(1..=32)
+                    .prefix("Snap "),
+            );
+            if ui.button("Undo 3D transform").clicked() {
+                if let Some(label) = self.voxel_panel_designer.undo_compositions() {
+                    self.status = format!("Undid {label}.");
+                    self.log(self.status.clone());
+                }
+            }
+            if ui.button("Redo 3D transform").clicked() {
+                if let Some(label) = self.voxel_panel_designer.redo_compositions() {
+                    self.status = format!("Redid {label}.");
+                    self.log(self.status.clone());
+                }
+            }
+            if let Some(instance) = self.voxel_panel_designer.selected_composition_instance() {
+                ui.label(format!(
+                    "Selected: {} @ {},{},{}",
+                    instance.id, instance.x, instance.y, instance.z
+                ));
+            }
+        });
+
+        ui.horizontal_wrapped(|ui| {
+            if ui.button("Begin connection from selected socket").clicked() {
+                match self
+                    .voxel_panel_designer
+                    .begin_preview_connection_from_selected_socket()
+                {
+                    Ok(message) => self.status = message,
+                    Err(error) => self.status = error,
+                }
+            }
+            if ui.button("Cancel connection").clicked() {
+                self.voxel_panel_designer.clear_preview_connection_draft();
+                self.status = "Canceled 3D connection draft.".to_string();
+            }
+            if ui.button("Snap selected to nearest socket").clicked() {
+                self.voxel_panel_designer
+                    .push_composition_undo("3D snap selected to nearest socket");
+                match self
+                    .voxel_panel_designer
+                    .snap_selected_instance_to_nearest_socket()
+                {
+                    Ok(message) => {
+                        let _ = self
+                            .voxel_panel_designer
+                            .refresh_live_preview_from_composition();
+                        self.status = message;
+                    }
+                    Err(error) => self.status = error,
+                }
+            }
+            if ui.button("Duplicate selected").clicked() {
+                self.voxel_panel_designer
+                    .push_composition_undo("3D duplicate selected instance");
+                match self
+                    .voxel_panel_designer
+                    .duplicate_selected_composition_instance_3d()
+                {
+                    Ok(message) => self.status = message,
+                    Err(error) => self.status = error,
+                }
+            }
+            if ui.button("Delete selected").clicked() {
+                self.voxel_panel_designer
+                    .push_composition_undo("3D delete selected instance");
+                match self
+                    .voxel_panel_designer
+                    .remove_selected_composition_instance_3d()
+                {
+                    Ok(message) => self.status = message,
+                    Err(error) => self.status = error,
+                }
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            if ui.button("Rotate 90° CW").clicked() {
+                self.voxel_panel_designer
+                    .push_composition_undo("3D rotate selected instance clockwise");
+                match self
+                    .voxel_panel_designer
+                    .rotate_selected_composition_instance_3d(true)
+                {
+                    Ok(message) => {
+                        if let Some(refreshed_export) =
+                            self.voxel_panel_designer.preview_3d_export.clone()
+                        {
+                            export = refreshed_export;
+                        }
+                        self.status = message;
+                    }
+                    Err(error) => self.status = error,
+                }
+            }
+            if ui.button("Rotate 90° CCW").clicked() {
+                self.voxel_panel_designer
+                    .push_composition_undo("3D rotate selected instance counter-clockwise");
+                match self
+                    .voxel_panel_designer
+                    .rotate_selected_composition_instance_3d(false)
+                {
+                    Ok(message) => {
+                        if let Some(refreshed_export) =
+                            self.voxel_panel_designer.preview_3d_export.clone()
+                        {
+                            export = refreshed_export;
+                        }
+                        self.status = message;
+                    }
+                    Err(error) => self.status = error,
+                }
+            }
+            if ui.button("Mirror X").clicked() {
+                self.voxel_panel_designer
+                    .push_composition_undo("3D mirror selected instance X");
+                match self
+                    .voxel_panel_designer
+                    .toggle_selected_composition_instance_mirror_3d(true)
+                {
+                    Ok(message) => {
+                        if let Some(refreshed_export) =
+                            self.voxel_panel_designer.preview_3d_export.clone()
+                        {
+                            export = refreshed_export;
+                        }
+                        self.status = message;
+                    }
+                    Err(error) => self.status = error,
+                }
+            }
+            if ui.button("Mirror Y").clicked() {
+                self.voxel_panel_designer
+                    .push_composition_undo("3D mirror selected instance Y");
+                match self
+                    .voxel_panel_designer
+                    .toggle_selected_composition_instance_mirror_3d(false)
+                {
+                    Ok(message) => {
+                        if let Some(refreshed_export) =
+                            self.voxel_panel_designer.preview_3d_export.clone()
+                        {
+                            export = refreshed_export;
+                        }
+                        self.status = message;
+                    }
+                    Err(error) => self.status = error,
+                }
+            }
+            if ui.button("Delete selected connection").clicked() {
+                self.voxel_panel_designer
+                    .push_composition_undo("3D delete selected connection");
+                match self
+                    .voxel_panel_designer
+                    .remove_selected_composition_connection_3d()
+                {
+                    Ok(message) => {
+                        if let Some(refreshed_export) =
+                            self.voxel_panel_designer.preview_3d_export.clone()
+                        {
+                            export = refreshed_export;
+                        }
+                        self.status = message;
+                    }
+                    Err(error) => self.status = error,
+                }
+            }
+            if let Some(connection) = self.voxel_panel_designer.selected_composition_connection() {
+                ui.label(format!("Selected connection: {}", connection.id));
+            }
+        });
+
+        if let Some(draft) = self.voxel_panel_designer.preview_connection_draft.as_ref() {
+            ui.small(format!(
+                "Connection draft: {}.{} → click a compatible target socket; green = valid, red = invalid.",
+                draft.from_instance_id, draft.from_socket_id
+            ));
+        } else {
+            ui.small("Connection edit: select a socket, click Begin Connection, then click a target socket. Shift-click a socket also starts/completes a draft.");
+        }
+
         let viewport_width = ui.available_width().max(260.0);
-        let viewport_height = 360.0;
+        let viewport_height = 420.0;
         let (rect, response) = ui.allocate_exact_size(
             egui::vec2(viewport_width, viewport_height),
             egui::Sense::click_and_drag(),
         );
 
+        let preselected_instance_id = self
+            .voxel_panel_designer
+            .selected_composition_instance()
+            .map(|instance| instance.id.clone());
+        let hover_pos = ui
+            .input(|input| input.pointer.hover_pos())
+            .filter(|position| rect.contains(*position));
+        let hover_hit = hover_pos.and_then(|position| {
+            voxel_panel_preview_hit_test(
+                &export,
+                &self.voxel_panel_designer.preview_camera,
+                rect,
+                position,
+                preselected_instance_id.as_deref(),
+            )
+        });
+        self.voxel_panel_designer.preview_hover_hit = hover_hit.clone();
+
+        if response.drag_started() {
+            if let Some(hit) = &hover_hit {
+                if let Some(axis) = hit.transform_axis {
+                    if self
+                        .voxel_panel_designer
+                        .select_composition_instance_by_id(&hit.instance_id)
+                    {
+                        if let Some(start_origin) = self
+                            .voxel_panel_designer
+                            .selected_composition_instance_origin()
+                        {
+                            self.voxel_panel_designer.push_composition_undo(format!(
+                                "3D translate {} on {}",
+                                hit.instance_id,
+                                axis.label()
+                            ));
+                            self.voxel_panel_designer.preview_drag =
+                                Some(VoxelPanelPreviewDragState {
+                                    instance_id: hit.instance_id.clone(),
+                                    axis,
+                                    start_origin,
+                                });
+                            self.status = format!(
+                                "Started 3D translate handle for '{}' on {}.",
+                                hit.instance_id,
+                                axis.label()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        if response.clicked() {
+            let shift_connect = ui.input(|input| input.modifiers.shift);
+            if let Some(hit) = &hover_hit {
+                match hit.kind {
+                    VoxelPanelPreviewHitKind::Socket => {
+                        if let Some(socket_id) = &hit.socket_id {
+                            let selected = self
+                                .voxel_panel_designer
+                                .select_composition_socket_by_id(&hit.instance_id, socket_id);
+                            if selected {
+                                self.status = format!(
+                                    "Selected 3D socket '{}.{}'.",
+                                    hit.instance_id, socket_id
+                                );
+                            }
+
+                            if let Some(draft) =
+                                self.voxel_panel_designer.preview_connection_draft.clone()
+                            {
+                                if draft.from_instance_id == hit.instance_id
+                                    && draft.from_socket_id == *socket_id
+                                {
+                                    self.status =
+                                        "Connection draft is already using that source socket."
+                                            .to_string();
+                                } else {
+                                    self.voxel_panel_designer
+                                        .push_composition_undo("3D socket connection edit");
+                                    match self.voxel_panel_designer.add_connection_between_sockets(
+                                        &draft.from_instance_id,
+                                        &draft.from_socket_id,
+                                        &hit.instance_id,
+                                        socket_id,
+                                    ) {
+                                        Ok(message) => {
+                                            if let Some(refreshed_export) =
+                                                self.voxel_panel_designer.preview_3d_export.clone()
+                                            {
+                                                export = refreshed_export;
+                                            }
+                                            self.status = message;
+                                        }
+                                        Err(error) => self.status = error,
+                                    }
+                                }
+                            } else if shift_connect {
+                                match self
+                                    .voxel_panel_designer
+                                    .begin_preview_connection_from_socket(
+                                        &hit.instance_id,
+                                        socket_id,
+                                    ) {
+                                    Ok(message) => self.status = message,
+                                    Err(error) => self.status = error,
+                                }
+                            }
+                        }
+                    }
+                    VoxelPanelPreviewHitKind::RotateHandle => {
+                        if self
+                            .voxel_panel_designer
+                            .select_composition_instance_by_id(&hit.instance_id)
+                        {
+                            self.voxel_panel_designer
+                                .push_composition_undo("3D rotate handle");
+                            match self
+                                .voxel_panel_designer
+                                .rotate_selected_composition_instance_3d(true)
+                            {
+                                Ok(message) => {
+                                    if let Some(refreshed_export) =
+                                        self.voxel_panel_designer.preview_3d_export.clone()
+                                    {
+                                        export = refreshed_export;
+                                    }
+                                    self.status = message;
+                                }
+                                Err(error) => self.status = error,
+                            }
+                        }
+                    }
+                    VoxelPanelPreviewHitKind::Connection => {
+                        if let Some(connection_id) = hit.connection_id.as_deref() {
+                            if self
+                                .voxel_panel_designer
+                                .select_composition_connection_by_id(connection_id)
+                            {
+                                self.status =
+                                    format!("Selected 3D connection '{}'.", connection_id);
+                            }
+                        }
+                    }
+                    VoxelPanelPreviewHitKind::Instance
+                    | VoxelPanelPreviewHitKind::TranslateHandle => {
+                        if self
+                            .voxel_panel_designer
+                            .select_composition_instance_by_id(&hit.instance_id)
+                        {
+                            self.status = format!("Selected 3D instance '{}'.", hit.instance_id);
+                        }
+                    }
+                }
+            }
+        }
+
         if response.dragged() {
-            let delta = response.drag_delta();
-            let camera = &mut self.voxel_panel_designer.preview_camera;
-            camera.yaw_degrees = (camera.yaw_degrees + delta.x * 0.08).clamp(-180.0, 180.0);
-            camera.pitch_degrees = (camera.pitch_degrees - delta.y * 0.08).clamp(-80.0, 80.0);
+            if let Some(drag) = self.voxel_panel_designer.preview_drag.clone() {
+                let maybe_axis_vec = export
+                    .instances
+                    .iter()
+                    .find(|instance| instance.instance_id == drag.instance_id)
+                    .and_then(|instance| {
+                        voxel_panel_preview_axis_screen_vector(
+                            &export,
+                            &self.voxel_panel_designer.preview_camera,
+                            rect,
+                            instance,
+                            drag.axis,
+                        )
+                    });
+
+                if let Some(axis_vec) = maybe_axis_vec {
+                    let delta = response.drag_delta();
+                    let dot = delta.x * axis_vec.x + delta.y * axis_vec.y;
+                    let snap = self.voxel_panel_designer.transform_grid_snap.max(1);
+                    let step_px = (self.voxel_panel_designer.preview_camera.zoom
+                        * export.voxel_unit
+                        * snap as f32)
+                        .max(8.0);
+                    let amount = (dot / step_px).round() as i32 * snap;
+
+                    if self
+                        .voxel_panel_designer
+                        .select_composition_instance_by_id(&drag.instance_id)
+                        && self
+                            .voxel_panel_designer
+                            .translate_selected_composition_instance(
+                                drag.axis,
+                                amount,
+                                drag.start_origin,
+                            )
+                    {
+                        if self
+                            .voxel_panel_designer
+                            .refresh_live_preview_from_composition()
+                            .is_ok()
+                        {
+                            if let Some(refreshed_export) =
+                                self.voxel_panel_designer.preview_3d_export.clone()
+                            {
+                                export = refreshed_export;
+                            }
+                        }
+                        self.status = format!(
+                            "Translated '{}' {} by {} cell(s).",
+                            drag.instance_id,
+                            drag.axis.label(),
+                            amount
+                        );
+                        ui.ctx().request_repaint();
+                    }
+                }
+            } else {
+                let delta = response.drag_delta();
+                let camera = &mut self.voxel_panel_designer.preview_camera;
+                camera.yaw_degrees = (camera.yaw_degrees + delta.x * 0.08).clamp(-180.0, 180.0);
+                camera.pitch_degrees = (camera.pitch_degrees - delta.y * 0.08).clamp(-80.0, 80.0);
+            }
+        }
+
+        if response.hovered() {
+            let keyboard_action = ui.input(|input| {
+                let step = self.voxel_panel_designer.transform_grid_snap.max(1)
+                    * if input.modifiers.shift { 4 } else { 1 };
+                if input.key_pressed(egui::Key::ArrowRight) {
+                    Some((VoxelPanelTransformAxis::X, step))
+                } else if input.key_pressed(egui::Key::ArrowLeft) {
+                    Some((VoxelPanelTransformAxis::X, -step))
+                } else if input.key_pressed(egui::Key::ArrowUp) {
+                    Some((VoxelPanelTransformAxis::Y, -step))
+                } else if input.key_pressed(egui::Key::ArrowDown) {
+                    Some((VoxelPanelTransformAxis::Y, step))
+                } else if input.key_pressed(egui::Key::PageUp) {
+                    Some((VoxelPanelTransformAxis::Z, step))
+                } else if input.key_pressed(egui::Key::PageDown) {
+                    Some((VoxelPanelTransformAxis::Z, -step))
+                } else {
+                    None
+                }
+            });
+            if let Some((axis, amount)) = keyboard_action {
+                match self
+                    .voxel_panel_designer
+                    .nudge_selected_composition_instance_3d(axis, amount)
+                {
+                    Ok(message) => {
+                        if let Some(refreshed_export) =
+                            self.voxel_panel_designer.preview_3d_export.clone()
+                        {
+                            export = refreshed_export;
+                        }
+                        self.status = message;
+                    }
+                    Err(error) => self.status = error,
+                }
+            }
+            let rotate_key = ui.input(|input| input.key_pressed(egui::Key::R));
+            if rotate_key {
+                self.voxel_panel_designer
+                    .push_composition_undo("3D keyboard rotate selected instance");
+                match self
+                    .voxel_panel_designer
+                    .rotate_selected_composition_instance_3d(true)
+                {
+                    Ok(message) => {
+                        if let Some(refreshed_export) =
+                            self.voxel_panel_designer.preview_3d_export.clone()
+                        {
+                            export = refreshed_export;
+                        }
+                        self.status = message;
+                    }
+                    Err(error) => self.status = error,
+                }
+            }
+            let duplicate_key =
+                ui.input(|input| input.modifiers.command && input.key_pressed(egui::Key::D));
+            if duplicate_key {
+                self.voxel_panel_designer
+                    .push_composition_undo("3D duplicate selected instance");
+                match self
+                    .voxel_panel_designer
+                    .duplicate_selected_composition_instance_3d()
+                {
+                    Ok(message) => {
+                        if let Some(refreshed_export) =
+                            self.voxel_panel_designer.preview_3d_export.clone()
+                        {
+                            export = refreshed_export;
+                        }
+                        self.status = message;
+                    }
+                    Err(error) => self.status = error,
+                }
+            }
+            let delete_key = ui.input(|input| input.key_pressed(egui::Key::Delete));
+            if delete_key {
+                let delete_connection = hover_hit
+                    .as_ref()
+                    .and_then(|hit| hit.connection_id.as_deref())
+                    .map(|connection_id| {
+                        self.voxel_panel_designer
+                            .select_composition_connection_by_id(connection_id)
+                    })
+                    .unwrap_or(false);
+                if delete_connection {
+                    self.voxel_panel_designer
+                        .push_composition_undo("3D delete hovered connection");
+                    match self
+                        .voxel_panel_designer
+                        .remove_selected_composition_connection_3d()
+                    {
+                        Ok(message) => {
+                            if let Some(refreshed_export) =
+                                self.voxel_panel_designer.preview_3d_export.clone()
+                            {
+                                export = refreshed_export;
+                            }
+                            self.status = message;
+                        }
+                        Err(error) => self.status = error,
+                    }
+                } else {
+                    self.voxel_panel_designer
+                        .push_composition_undo("3D delete selected instance");
+                    match self
+                        .voxel_panel_designer
+                        .remove_selected_composition_instance_3d()
+                    {
+                        Ok(message) => {
+                            if let Some(refreshed_export) =
+                                self.voxel_panel_designer.preview_3d_export.clone()
+                            {
+                                export = refreshed_export;
+                            }
+                            self.status = message;
+                        }
+                        Err(error) => self.status = error,
+                    }
+                }
+            }
+        }
+
+        if !ui.input(|input| input.pointer.primary_down()) {
+            self.voxel_panel_designer.preview_drag = None;
         }
 
         let painter = ui.painter_at(rect);
@@ -10238,6 +13841,10 @@ impl StarlightRidgeEguiEditor {
                     })
                     .map(|socket| (instance.id.as_str(), socket.id.as_str()))
             });
+        let selected_connection_id = self
+            .voxel_panel_designer
+            .selected_composition_connection()
+            .map(|connection| connection.id.as_str());
         voxel_panel_draw_3d_preview(
             &painter,
             rect,
@@ -10245,56 +13852,64 @@ impl StarlightRidgeEguiEditor {
             &self.voxel_panel_designer.preview_camera,
             selected_instance_id,
             selected_socket_key,
+            selected_connection_id,
+            hover_hit.as_ref(),
         );
+        if let Some(draft) = self.voxel_panel_designer.preview_connection_draft.as_ref() {
+            voxel_panel_draw_preview_connection_draft(
+                &painter,
+                rect,
+                &export,
+                &self.voxel_panel_designer.preview_camera,
+                draft,
+                hover_hit.as_ref(),
+                hover_pos,
+            );
+        }
 
-        let hover_pos = ui
-            .input(|input| input.pointer.hover_pos())
-            .filter(|position| rect.contains(*position));
         if self.voxel_panel_designer.preview_camera.show_hover_labels {
-            if let Some(position) = hover_pos {
-                if let Some(label) = voxel_panel_preview_hover_label(
-                    &export,
-                    &self.voxel_panel_designer.preview_camera,
-                    rect,
-                    position,
-                ) {
-                    let label_pos = position + egui::vec2(12.0, 12.0);
-                    let label_rect = egui::Rect::from_min_size(
-                        label_pos,
-                        egui::vec2((label.len() as f32 * 6.2).clamp(180.0, 520.0), 24.0),
-                    );
-                    painter.rect_filled(
-                        label_rect,
-                        4.0,
-                        egui::Color32::from_rgba_unmultiplied(24, 29, 36, 236),
-                    );
-                    painter.rect_stroke(
-                        label_rect,
-                        4.0,
-                        egui::Stroke::new(
-                            1.0,
-                            egui::Color32::from_rgba_unmultiplied(168, 188, 212, 180),
-                        ),
-                        egui::StrokeKind::Inside,
-                    );
-                    painter.text(
-                        label_pos + egui::vec2(7.0, 5.0),
-                        egui::Align2::LEFT_TOP,
-                        label,
-                        egui::FontId::monospace(10.0),
-                        egui::Color32::from_rgb(238, 244, 250),
-                    );
-                }
+            if let (Some(position), Some(hit)) = (hover_pos, hover_hit.as_ref()) {
+                let label = hit.label.clone();
+                let label_pos = position + egui::vec2(12.0, 12.0);
+                let label_rect = egui::Rect::from_min_size(
+                    label_pos,
+                    egui::vec2((label.len() as f32 * 6.2).clamp(180.0, 560.0), 24.0),
+                );
+                painter.rect_filled(
+                    label_rect,
+                    4.0,
+                    egui::Color32::from_rgba_unmultiplied(24, 29, 36, 236),
+                );
+                painter.rect_stroke(
+                    label_rect,
+                    4.0,
+                    egui::Stroke::new(
+                        1.0,
+                        egui::Color32::from_rgba_unmultiplied(168, 188, 212, 180),
+                    ),
+                    egui::StrokeKind::Inside,
+                );
+                painter.text(
+                    label_pos + egui::vec2(7.0, 5.0),
+                    egui::Align2::LEFT_TOP,
+                    label,
+                    egui::FontId::monospace(10.0),
+                    egui::Color32::from_rgb(238, 244, 250),
+                );
             }
         }
 
         painter.text(
             rect.left_top() + egui::vec2(8.0, 8.0),
             egui::Align2::LEFT_TOP,
-            "drag = orbit · sliders = orbit/pan/zoom · yellow box = selected instance",
+            "click = select · Shift-click sockets = connect · arrows/PageUp/PageDown = nudge · Ctrl+D/Delete = duplicate/delete",
             egui::FontId::monospace(10.0),
             egui::Color32::from_rgba_unmultiplied(210, 220, 232, 190),
         );
+
+        if let Some(hit) = self.voxel_panel_designer.preview_hover_hit.as_ref() {
+            ui.small(format!("3D hover: {}", hit.label));
+        }
 
         if self
             .voxel_panel_designer
@@ -10493,7 +14108,10 @@ impl StarlightRidgeEguiEditor {
                         ui.monospace(asset.relative_path.as_str());
                         ui.end_row();
                         ui.label("Size");
-                        ui.label(format!("{} x {} x {}", asset.width, asset.height, asset.depth));
+                        ui.label(format!(
+                            "{} x {} x {}",
+                            asset.width, asset.height, asset.depth
+                        ));
                         ui.end_row();
                         ui.label("Voxel count");
                         ui.label(asset.voxel_count.to_string());
@@ -10523,10 +14141,8 @@ impl StarlightRidgeEguiEditor {
 
                 if let Some((_, model)) = self.loaded_vox_cache.as_ref() {
                     let preview_size = egui::vec2(280.0, 280.0);
-                    let (preview_rect, _) = columns[1].allocate_exact_size(
-                        preview_size,
-                        egui::Sense::hover(),
-                    );
+                    let (preview_rect, _) =
+                        columns[1].allocate_exact_size(preview_size, egui::Sense::hover());
                     let painter = columns[1].painter_at(preview_rect);
                     painter.rect_filled(preview_rect, 4.0, egui::Color32::from_rgb(18, 22, 30));
                     draw_vox_isometric_preview(&painter, preview_rect, model);
@@ -10599,10 +14215,7 @@ impl StarlightRidgeEguiEditor {
                             .inner_margin(egui::Margin::symmetric(8, 6))
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
-                                    ui.colored_label(
-                                        status_color,
-                                        if exists { "✓" } else { "✗" },
-                                    );
+                                    ui.colored_label(status_color, if exists { "✓" } else { "✗" });
                                     ui.strong(profile.id);
                                 });
                                 ui.small(format!(
@@ -10615,10 +14228,9 @@ impl StarlightRidgeEguiEditor {
                                 ui.small(format!("Output: {}", profile.output_path));
                                 ui.small(format!("File: {file_size}"));
                                 if exists {
-                                    if let Some(validation) = validate_vox_profile(
-                                        &output_path,
-                                        profile.dimensions,
-                                    ) {
+                                    if let Some(validation) =
+                                        validate_vox_profile(&output_path, profile.dimensions)
+                                    {
                                         ui.colored_label(
                                             egui::Color32::from_rgb(220, 160, 60),
                                             format!("⚠ {validation}"),
@@ -10644,10 +14256,7 @@ impl StarlightRidgeEguiEditor {
                                             .unwrap_or_default(),
                                     ) {
                                         Ok(()) => {
-                                            let msg = format!(
-                                                "Generated {}.",
-                                                profile.output_path
-                                            );
+                                            let msg = format!("Generated {}.", profile.output_path);
                                             self.status = msg.clone();
                                             self.generator_log.push(format!("  ✓ {msg}"));
                                             self.loaded_vox_cache = None;
@@ -11531,6 +15140,18 @@ impl StarlightRidgeEguiEditor {
     }
 }
 
+impl Drop for StarlightRidgeEguiEditor {
+    fn drop(&mut self) {
+        if let (Some(renderer), Some(gl)) = (&self.scene3d_gl_renderer, &self.scene3d_gl_context) {
+            if let Ok(renderer) = renderer.lock() {
+                unsafe {
+                    renderer.destroy(gl.as_ref());
+                }
+            }
+        }
+    }
+}
+
 impl eframe::App for StarlightRidgeEguiEditor {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // eframe 0.34 passes the app an already-rooted Ui. All shell panels must be
@@ -11549,6 +15170,834 @@ impl eframe::App for StarlightRidgeEguiEditor {
         self.draw_center_panel(ui);
         self.end_shell_render();
     }
+}
+
+fn scene_iso_project(point: [f32; 3], cell: f32, center: egui::Pos2) -> egui::Pos2 {
+    let x = (point[0] - point[1]) * cell * 0.5;
+    let y = (point[0] + point[1]) * cell * 0.25 - point[2] * cell * 0.5;
+    egui::pos2(center.x + x, center.y + y)
+}
+
+#[derive(Clone, Copy)]
+struct VoxelRenderPreviewCamera {
+    center: [f32; 3],
+    yaw: f32,
+    pitch: f32,
+    scale: f32,
+    offset: egui::Vec2,
+}
+
+impl VoxelRenderPreviewCamera {
+    fn from_bounds(
+        rect: egui::Rect,
+        bounds_min: [f32; 3],
+        bounds_max: [f32; 3],
+        yaw_degrees: f32,
+        pitch_degrees: f32,
+        zoom: f32,
+    ) -> Option<Self> {
+        let center = [
+            (bounds_min[0] + bounds_max[0]) * 0.5,
+            (bounds_min[1] + bounds_max[1]) * 0.5,
+            (bounds_min[2] + bounds_max[2]) * 0.5,
+        ];
+        let yaw = yaw_degrees.to_radians();
+        let pitch = pitch_degrees.to_radians();
+
+        let mut projected_bounds = egui::Rect::NOTHING;
+        for corner in voxel_render_bounds_corners(bounds_min, bounds_max) {
+            let projected = voxel_render_project_raw(corner, center, yaw, pitch);
+            projected_bounds.extend_with(egui::pos2(projected[0], projected[1]));
+        }
+
+        let span_x = projected_bounds.width().max(1.0);
+        let span_y = projected_bounds.height().max(1.0);
+        let scale =
+            (rect.width() / span_x).min(rect.height() / span_y) * 0.84 * zoom.clamp(0.1, 4.0);
+        let offset = rect.center().to_vec2()
+            - egui::vec2(
+                projected_bounds.center().x * scale,
+                projected_bounds.center().y * scale,
+            );
+
+        Some(Self {
+            center,
+            yaw,
+            pitch,
+            scale,
+            offset,
+        })
+    }
+
+    fn from_scene(
+        rect: egui::Rect,
+        render_data: &VoxelSceneRenderData,
+        yaw_degrees: f32,
+        pitch_degrees: f32,
+        zoom: f32,
+    ) -> Option<Self> {
+        if render_data.vertices.is_empty() || render_data.indices.len() < 3 {
+            return None;
+        }
+
+        Self::from_bounds(
+            rect,
+            render_data.bounds_min,
+            render_data.bounds_max,
+            yaw_degrees,
+            pitch_degrees,
+            zoom,
+        )
+    }
+
+    fn project(self, position: [f32; 3]) -> (egui::Pos2, f32) {
+        voxel_render_project_screen(
+            position,
+            self.center,
+            self.yaw,
+            self.pitch,
+            self.scale,
+            self.offset,
+        )
+    }
+}
+
+fn scene3d_screen_delta_to_map_delta(
+    camera: VoxelRenderPreviewCamera,
+    delta: egui::Vec2,
+) -> (f32, f32) {
+    let cos_pitch = camera.pitch.cos().abs().max(0.08);
+    let raw_x = delta.x / camera.scale.max(0.001);
+    let raw_y = delta.y / (camera.scale.max(0.001) * cos_pitch);
+    let cos_yaw = camera.yaw.cos();
+    let sin_yaw = camera.yaw.sin();
+    (
+        raw_x * cos_yaw + raw_y * sin_yaw,
+        -raw_x * sin_yaw + raw_y * cos_yaw,
+    )
+}
+
+fn top_visible_tile_id_at(layers: &MapLayersDef, x: u32, y: u32) -> Option<String> {
+    for layer in layers.layers.iter().rev().filter(|layer| layer.visible) {
+        let Some(symbol) = layer_symbol_at(layer, x as usize, y as usize) else {
+            continue;
+        };
+        if is_empty_layer_symbol(symbol) {
+            continue;
+        }
+        if let Some(tile_id) = layer_tile_for_symbol(layer, symbol) {
+            return Some(tile_id);
+        }
+    }
+    None
+}
+
+fn world_3d_tile_height(tile_id: &str) -> f32 {
+    let lower = tile_id.to_ascii_lowercase();
+    if lower.contains("water") || lower.contains("pond") || lower.contains("river") {
+        0.08
+    } else if lower.contains("wall") || lower.contains("rock") || lower.contains("cliff") {
+        0.72
+    } else if lower.contains("tree") || lower.contains("stump") {
+        0.92
+    } else if lower.contains("path") || lower.contains("sand") || lower.contains("dirt") {
+        0.18
+    } else {
+        0.34
+    }
+}
+
+fn paint_world_3d_tile_prism(
+    painter: &egui::Painter,
+    camera: VoxelRenderPreviewCamera,
+    x: u32,
+    y: u32,
+    height: f32,
+    color: egui::Color32,
+) {
+    let x0 = x as f32;
+    let y0 = y as f32;
+    let x1 = x0 + 1.0;
+    let y1 = y0 + 1.0;
+    let z0 = 0.0;
+    let z1 = height.max(0.04);
+    let p000 = camera.project([x0, y0, z0]).0;
+    let p100 = camera.project([x1, y0, z0]).0;
+    let p110 = camera.project([x1, y1, z0]).0;
+    let p010 = camera.project([x0, y1, z0]).0;
+    let p001 = camera.project([x0, y0, z1]).0;
+    let p101 = camera.project([x1, y0, z1]).0;
+    let p111 = camera.project([x1, y1, z1]).0;
+    let p011 = camera.project([x0, y1, z1]).0;
+
+    let stroke = egui::Stroke::new(0.35, egui::Color32::from_rgba_unmultiplied(10, 14, 20, 100));
+    let top = color.gamma_multiply(1.08);
+    let side_a = color.gamma_multiply(0.74);
+    let side_b = color.gamma_multiply(0.88);
+
+    painter.add(egui::Shape::convex_polygon(
+        vec![p001, p101, p111, p011],
+        top,
+        stroke,
+    ));
+    if height > 0.12 {
+        painter.add(egui::Shape::convex_polygon(
+            vec![p011, p111, p110, p010],
+            side_a,
+            stroke,
+        ));
+        painter.add(egui::Shape::convex_polygon(
+            vec![p101, p111, p110, p100],
+            side_b,
+            stroke,
+        ));
+        painter.line_segment(
+            [p000, p001],
+            egui::Stroke::new(0.25, egui::Color32::from_rgba_unmultiplied(10, 14, 20, 60)),
+        );
+    }
+}
+
+fn world_voxel_object_color(object: &VoxelObjectPlacement) -> egui::Color32 {
+    let mut seed = 0_u32;
+    for byte in object
+        .source_id
+        .bytes()
+        .chain(object.id.bytes())
+        .chain(object.source_kind.bytes())
+    {
+        seed = seed.wrapping_mul(16777619).wrapping_add(byte as u32 + 1);
+    }
+    egui::Color32::from_rgb(
+        100 + (seed.wrapping_mul(17) % 105) as u8,
+        118 + (seed.wrapping_mul(29) % 96) as u8,
+        126 + (seed.wrapping_mul(41) % 92) as u8,
+    )
+}
+
+fn world_voxel_object_corners(object: &VoxelObjectPlacement) -> [[f32; 3]; 8] {
+    let x0 = object.x;
+    let y0 = object.y;
+    let z0 = object.z;
+    let x1 = x0 + object.footprint_width.max(0.1);
+    let y1 = y0 + object.footprint_height.max(0.1);
+    let z1 = z0 + object.height.max(0.1);
+    [
+        [x0, y0, z0],
+        [x1, y0, z0],
+        [x1, y1, z0],
+        [x0, y1, z0],
+        [x0, y0, z1],
+        [x1, y0, z1],
+        [x1, y1, z1],
+        [x0, y1, z1],
+    ]
+}
+
+fn world_voxel_object_3d_screen_rect(
+    object: &VoxelObjectPlacement,
+    camera: VoxelRenderPreviewCamera,
+) -> egui::Rect {
+    let points = world_voxel_object_corners(object).map(|corner| camera.project(corner).0);
+    let mut min = points[0];
+    let mut max = points[0];
+    for point in points.iter().skip(1) {
+        min.x = min.x.min(point.x);
+        min.y = min.y.min(point.y);
+        max.x = max.x.max(point.x);
+        max.y = max.y.max(point.y);
+    }
+    egui::Rect::from_min_max(min, max)
+}
+
+fn paint_world_voxel_object_prism(
+    painter: &egui::Painter,
+    camera: VoxelRenderPreviewCamera,
+    object: &VoxelObjectPlacement,
+    selected: bool,
+) {
+    let corners = world_voxel_object_corners(object).map(|corner| camera.project(corner).0);
+    let base = if selected {
+        egui::Color32::from_rgb(255, 218, 104)
+    } else {
+        world_voxel_object_color(object)
+    };
+    let stroke_color = if selected {
+        egui::Color32::from_rgb(255, 242, 166)
+    } else {
+        egui::Color32::from_rgba_unmultiplied(16, 22, 30, 170)
+    };
+    let stroke = egui::Stroke::new(if selected { 1.8 } else { 0.8 }, stroke_color);
+
+    painter.add(egui::Shape::convex_polygon(
+        vec![corners[4], corners[5], corners[6], corners[7]],
+        base.gamma_multiply(1.14),
+        stroke,
+    ));
+    painter.add(egui::Shape::convex_polygon(
+        vec![corners[7], corners[6], corners[2], corners[3]],
+        base.gamma_multiply(0.76),
+        stroke,
+    ));
+    painter.add(egui::Shape::convex_polygon(
+        vec![corners[5], corners[6], corners[2], corners[1]],
+        base.gamma_multiply(0.9),
+        stroke,
+    ));
+
+    if selected {
+        for (a, b) in [(4, 5), (5, 6), (6, 7), (7, 4), (1, 5), (2, 6), (3, 7)] {
+            painter.line_segment(
+                [corners[a], corners[b]],
+                egui::Stroke::new(2.2, egui::Color32::from_rgb(255, 236, 132)),
+            );
+        }
+        let top_center = corners[4].lerp(corners[6], 0.5);
+        let footprint_corner = corners[6];
+        painter.circle_filled(top_center, 4.0, egui::Color32::from_rgb(255, 236, 132));
+        painter.circle_stroke(
+            footprint_corner,
+            4.0,
+            egui::Stroke::new(1.6, egui::Color32::from_rgb(255, 236, 132)),
+        );
+    }
+
+    let label_pos = corners[4].lerp(corners[6], 0.5) + egui::vec2(0.0, -6.0);
+    painter.text(
+        label_pos,
+        egui::Align2::CENTER_BOTTOM,
+        object.id.as_str(),
+        egui::FontId::monospace(9.0),
+        egui::Color32::from_rgba_unmultiplied(232, 238, 246, if selected { 245 } else { 165 }),
+    );
+}
+
+fn paint_voxel_render_data_preview(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    render_data: &VoxelSceneRenderData,
+    yaw_degrees: f32,
+    pitch_degrees: f32,
+    zoom: f32,
+) {
+    if render_data.vertices.is_empty() || render_data.indices.len() < 3 {
+        painter.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "Empty voxel mesh",
+            egui::FontId::proportional(14.0),
+            egui::Color32::from_rgb(160, 174, 194),
+        );
+        return;
+    }
+
+    let Some(camera) =
+        VoxelRenderPreviewCamera::from_scene(rect, render_data, yaw_degrees, pitch_degrees, zoom)
+    else {
+        return;
+    };
+
+    #[derive(Clone, Copy)]
+    struct PreviewTriangle {
+        points: [egui::Pos2; 3],
+        depth: f32,
+        color: egui::Color32,
+    }
+
+    let triangle_count = render_data.indices.len() / 3;
+    let step = (triangle_count / 9000).max(1);
+    let mut triangles = Vec::with_capacity((triangle_count / step).min(9000) + 1);
+
+    for triangle_index in (0..triangle_count).step_by(step) {
+        let base = triangle_index * 3;
+        let Some(a) = render_data
+            .indices
+            .get(base)
+            .and_then(|index| render_data.vertices.get(*index as usize))
+        else {
+            continue;
+        };
+        let Some(b) = render_data
+            .indices
+            .get(base + 1)
+            .and_then(|index| render_data.vertices.get(*index as usize))
+        else {
+            continue;
+        };
+        let Some(c) = render_data
+            .indices
+            .get(base + 2)
+            .and_then(|index| render_data.vertices.get(*index as usize))
+        else {
+            continue;
+        };
+
+        let pa = camera.project(a.position);
+        let pb = camera.project(b.position);
+        let pc = camera.project(c.position);
+        let color = average_voxel_vertex_color([a.color, b.color, c.color]);
+        let depth = (pa.1 + pb.1 + pc.1) / 3.0;
+        triangles.push(PreviewTriangle {
+            points: [pa.0, pb.0, pc.0],
+            depth,
+            color,
+        });
+    }
+
+    triangles.sort_by(|a, b| {
+        a.depth
+            .partial_cmp(&b.depth)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    for triangle in triangles {
+        painter.add(egui::Shape::convex_polygon(
+            triangle.points.to_vec(),
+            triangle.color,
+            egui::Stroke::new(0.35, egui::Color32::from_rgba_unmultiplied(12, 16, 22, 110)),
+        ));
+    }
+
+    painter.text(
+        rect.left_top() + egui::vec2(8.0, 8.0),
+        egui::Align2::LEFT_TOP,
+        format!(
+            "{} rendered triangle(s){}",
+            (triangle_count / step).min(triangle_count),
+            if step > 1 { " sampled" } else { "" }
+        ),
+        egui::FontId::monospace(10.0),
+        egui::Color32::from_rgba_unmultiplied(220, 230, 242, 190),
+    );
+}
+
+fn voxel_render_bounds_corners(min: [f32; 3], max: [f32; 3]) -> [[f32; 3]; 8] {
+    [
+        [min[0], min[1], min[2]],
+        [max[0], min[1], min[2]],
+        [max[0], max[1], min[2]],
+        [min[0], max[1], min[2]],
+        [min[0], min[1], max[2]],
+        [max[0], min[1], max[2]],
+        [max[0], max[1], max[2]],
+        [min[0], max[1], max[2]],
+    ]
+}
+
+fn voxel_render_project_raw(
+    position: [f32; 3],
+    center: [f32; 3],
+    yaw: f32,
+    pitch: f32,
+) -> [f32; 3] {
+    let dx = position[0] - center[0];
+    let dy = position[1] - center[1];
+    let dz = position[2] - center[2];
+    let cos_yaw = yaw.cos();
+    let sin_yaw = yaw.sin();
+    let x = dx * cos_yaw - dy * sin_yaw;
+    let y = dx * sin_yaw + dy * cos_yaw;
+    let cos_pitch = pitch.cos();
+    let sin_pitch = pitch.sin();
+    let screen_y = y * cos_pitch - dz * sin_pitch;
+    let depth = y * sin_pitch + dz * cos_pitch;
+    [x, screen_y, depth]
+}
+
+fn voxel_render_project_screen(
+    position: [f32; 3],
+    center: [f32; 3],
+    yaw: f32,
+    pitch: f32,
+    scale: f32,
+    offset: egui::Vec2,
+) -> (egui::Pos2, f32) {
+    let projected = voxel_render_project_raw(position, center, yaw, pitch);
+    (
+        egui::pos2(
+            projected[0] * scale + offset.x,
+            projected[1] * scale + offset.y,
+        ),
+        projected[2],
+    )
+}
+
+fn average_voxel_vertex_color(colors: [[f32; 4]; 3]) -> egui::Color32 {
+    let r = ((colors[0][0] + colors[1][0] + colors[2][0]) / 3.0 * 255.0).clamp(0.0, 255.0) as u8;
+    let g = ((colors[0][1] + colors[1][1] + colors[2][1]) / 3.0 * 255.0).clamp(0.0, 255.0) as u8;
+    let b = ((colors[0][2] + colors[1][2] + colors[2][2]) / 3.0 * 255.0).clamp(0.0, 255.0) as u8;
+    let a = ((colors[0][3] + colors[1][3] + colors[2][3]) / 3.0 * 228.0).clamp(32.0, 245.0) as u8;
+    egui::Color32::from_rgba_unmultiplied(r, g, b, a)
+}
+
+fn scene_voxel_entry_color(entry: &SceneVoxelPreviewEntry) -> egui::Color32 {
+    let mut seed = 0_u32;
+    for byte in entry
+        .asset_id
+        .bytes()
+        .chain(entry.object_id.bytes())
+        .chain(entry.layer.bytes())
+    {
+        seed = seed.wrapping_mul(16777619).wrapping_add(byte as u32 + 1);
+    }
+    let r = 86 + (seed.wrapping_mul(17) % 110) as u8;
+    let g = 92 + (seed.wrapping_mul(29) % 110) as u8;
+    let b = 98 + (seed.wrapping_mul(41) % 110) as u8;
+    egui::Color32::from_rgb(r, g, b)
+}
+
+fn scene_voxel_entry_screen_rect(
+    entry: &SceneVoxelPreviewEntry,
+    dims: [f32; 3],
+    cell: f32,
+    center: egui::Pos2,
+) -> egui::Rect {
+    let corners = scene_voxel_box_corners(entry.position, dims)
+        .map(|point| scene_iso_project(point, cell, center));
+    let mut min = corners[0];
+    let mut max = corners[0];
+    for point in corners.iter().skip(1) {
+        min.x = min.x.min(point.x);
+        min.y = min.y.min(point.y);
+        max.x = max.x.max(point.x);
+        max.y = max.y.max(point.y);
+    }
+    egui::Rect::from_min_max(min, max)
+}
+
+fn scene_voxel_box_corners(origin: [f32; 3], dims: [f32; 3]) -> [[f32; 3]; 8] {
+    let x0 = origin[0];
+    let y0 = origin[1];
+    let z0 = origin[2];
+    let x1 = x0 + dims[0].max(0.25);
+    let y1 = y0 + dims[1].max(0.25);
+    let z1 = z0 + dims[2].max(0.25);
+    [
+        [x0, y0, z0],
+        [x1, y0, z0],
+        [x1, y1, z0],
+        [x0, y1, z0],
+        [x0, y0, z1],
+        [x1, y0, z1],
+        [x1, y1, z1],
+        [x0, y1, z1],
+    ]
+}
+
+fn paint_scene_vox_model(
+    painter: &egui::Painter,
+    entry: &SceneVoxelPreviewEntry,
+    model: &VoxModel,
+    cell: f32,
+    center: egui::Pos2,
+) {
+    if model.voxels.is_empty() || model.palette.is_empty() {
+        return;
+    }
+
+    let voxels_per_tile = entry.voxels_per_tile.max(1) as f32;
+    let scale = entry.scale.max(0.1) * entry.asset_scale.max(0.1);
+    let unit = scale / voxels_per_tile;
+    let yaw = entry.rotation_degrees[2].to_radians();
+    let cos_yaw = yaw.cos();
+    let sin_yaw = yaw.sin();
+    let pivot = [
+        model.width as f32 * unit * 0.5,
+        model.height as f32 * unit * 0.5,
+        0.0_f32,
+    ];
+    let dot_radius = (cell * unit * 0.42).clamp(1.0, 3.2);
+
+    let mut voxels = model.voxels.iter().collect::<Vec<_>>();
+    voxels.sort_by(|a, b| {
+        let pa = transformed_scene_voxel_center(entry, a, unit, pivot, cos_yaw, sin_yaw);
+        let pb = transformed_scene_voxel_center(entry, b, unit, pivot, cos_yaw, sin_yaw);
+        let depth_a = ((pa[0] + pa[1]) * 1000.0 - pa[2] * 100.0) as i32;
+        let depth_b = ((pb[0] + pb[1]) * 1000.0 - pb[2] * 100.0) as i32;
+        depth_a.cmp(&depth_b)
+    });
+
+    for voxel in voxels {
+        let point = transformed_scene_voxel_center(entry, voxel, unit, pivot, cos_yaw, sin_yaw);
+        let color = model
+            .palette
+            .get(voxel.color_index as usize)
+            .copied()
+            .unwrap_or(engine_assets::vox::VoxColor {
+                r: 220,
+                g: 184,
+                b: 96,
+                a: 255,
+            });
+        if color.a == 0 {
+            continue;
+        }
+        let pos = scene_iso_project(point, cell, center);
+        let fill = egui::Color32::from_rgba_unmultiplied(color.r, color.g, color.b, 230);
+        let stroke = egui::Color32::from_rgb(
+            (color.r as f32 * 0.68) as u8,
+            (color.g as f32 * 0.68) as u8,
+            (color.b as f32 * 0.68) as u8,
+        );
+        painter.circle_filled(pos, dot_radius, fill);
+        painter.circle_stroke(pos, dot_radius, egui::Stroke::new(0.5, stroke));
+    }
+}
+
+fn transformed_scene_voxel_center(
+    entry: &SceneVoxelPreviewEntry,
+    voxel: &engine_assets::vox::VoxVoxel,
+    unit: f32,
+    pivot: [f32; 3],
+    cos_yaw: f32,
+    sin_yaw: f32,
+) -> [f32; 3] {
+    let local_x = (voxel.x as f32 + 0.5) * unit - pivot[0];
+    let local_y = (voxel.y as f32 + 0.5) * unit - pivot[1];
+    let rotated_x = local_x * cos_yaw - local_y * sin_yaw;
+    let rotated_y = local_x * sin_yaw + local_y * cos_yaw;
+    [
+        entry.position[0] + rotated_x + pivot[0],
+        entry.position[1] + rotated_y + pivot[1],
+        entry.position[2] + (voxel.z as f32 + 0.5) * unit,
+    ]
+}
+
+fn paint_scene_voxel_box(
+    painter: &egui::Painter,
+    entry: &SceneVoxelPreviewEntry,
+    dims: [f32; 3],
+    cell: f32,
+    center: egui::Pos2,
+    selected: bool,
+) {
+    let corners = scene_voxel_box_corners(entry.position, dims)
+        .map(|point| scene_iso_project(point, cell, center));
+    let base_color = scene_voxel_entry_color(entry);
+    let top_fill = base_color.gamma_multiply(1.18);
+    let left_fill = base_color.gamma_multiply(0.82);
+    let right_fill = base_color.gamma_multiply(0.94);
+
+    painter.add(egui::Shape::convex_polygon(
+        vec![corners[4], corners[5], corners[6], corners[7]],
+        top_fill,
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(24, 28, 36)),
+    ));
+    painter.add(egui::Shape::convex_polygon(
+        vec![corners[7], corners[6], corners[2], corners[3]],
+        left_fill,
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(24, 28, 36)),
+    ));
+    painter.add(egui::Shape::convex_polygon(
+        vec![corners[5], corners[6], corners[2], corners[1]],
+        right_fill,
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(24, 28, 36)),
+    ));
+
+    if selected {
+        let highlight = egui::Color32::from_rgb(255, 220, 112);
+        for (a, b) in [(4, 5), (5, 6), (6, 7), (7, 4), (1, 5), (2, 6), (3, 7)] {
+            painter.line_segment([corners[a], corners[b]], egui::Stroke::new(2.0, highlight));
+        }
+    }
+
+    if cell >= 14.0 {
+        painter.text(
+            corners[4] + egui::vec2(0.0, -6.0),
+            egui::Align2::CENTER_BOTTOM,
+            entry.asset_id.as_str(),
+            egui::FontId::monospace(10.0),
+            egui::Color32::from_rgb(226, 232, 240),
+        );
+    }
+}
+
+impl ValidationIssue {
+    fn new(category: &'static str, message: String, source_path: Option<PathBuf>) -> Self {
+        let id = stable_validation_issue_id(category, &message);
+        let target = infer_validation_target(category, &message);
+        Self {
+            id,
+            category,
+            severity: infer_validation_severity(&message),
+            message,
+            source_path,
+            target,
+        }
+    }
+}
+
+impl ValidationSeverity {
+    fn label(self) -> &'static str {
+        match self {
+            ValidationSeverity::Error => "Error",
+            ValidationSeverity::Warning => "Warning",
+        }
+    }
+}
+
+fn validation_issues_for_category<'a>(
+    issues: &'a [ValidationIssue],
+    category: &str,
+) -> Vec<&'a ValidationIssue> {
+    issues
+        .iter()
+        .filter(|issue| issue.category == category)
+        .collect()
+}
+
+fn draw_validation_issue_row(ui: &mut egui::Ui, issue: &ValidationIssue, expanded: bool) -> bool {
+    let mut focus_clicked = false;
+    let color = match issue.severity {
+        ValidationSeverity::Error => egui::Color32::from_rgb(235, 132, 118),
+        ValidationSeverity::Warning => egui::Color32::from_rgb(230, 184, 92),
+    };
+    ui.horizontal_wrapped(|ui| {
+        ui.colored_label(color, issue.severity.label());
+        ui.monospace(issue.id.as_str());
+        ui.label(issue.message.as_str());
+        if issue.target.is_some() && ui.button("Focus").clicked() {
+            focus_clicked = true;
+        }
+    });
+    if expanded {
+        if let Some(path) = &issue.source_path {
+            ui.horizontal_wrapped(|ui| {
+                ui.small("Source");
+                ui.hyperlink_to(path.display().to_string(), file_url_for_path(path));
+            });
+        }
+    } else if let Some(path) = &issue.source_path {
+        ui.indent(issue.id.as_str(), |ui| {
+            ui.hyperlink_to(path.display().to_string(), file_url_for_path(path));
+        });
+    }
+    focus_clicked
+}
+
+fn infer_validation_severity(message: &str) -> ValidationSeverity {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("missing")
+        || lower.contains("invalid")
+        || lower.contains("outside")
+        || lower.contains("exceeds")
+        || lower.contains("does not match")
+        || lower.contains("does not exist")
+        || lower.contains("unmapped")
+        || lower.contains("empty")
+    {
+        ValidationSeverity::Error
+    } else {
+        ValidationSeverity::Warning
+    }
+}
+
+fn stable_validation_issue_id(category: &str, message: &str) -> String {
+    let mut hash = 0x811c9dc5_u32;
+    for byte in category.bytes().chain([b':']).chain(message.bytes()) {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(0x01000193);
+    }
+    format!("{}-{hash:08x}", category_id_prefix(category))
+}
+
+fn infer_validation_target(category: &str, message: &str) -> Option<ValidationTarget> {
+    match category {
+        "Layers" => quoted_id_after(message, "layer ").map(ValidationTarget::Layer),
+        "Placements" => {
+            let lower = message.to_ascii_lowercase();
+            if lower.starts_with("prop ") {
+                quoted_id_after(message, "prop ").map(ValidationTarget::Prop)
+            } else if lower.starts_with("spawn ") {
+                quoted_id_after(message, "spawn ").map(ValidationTarget::Spawn)
+            } else if lower.starts_with("trigger ") {
+                quoted_id_after(message, "trigger ").map(ValidationTarget::Trigger)
+            } else if lower.starts_with("voxel object ") {
+                quoted_id_after(message, "voxel object ").map(ValidationTarget::VoxelObject)
+            } else {
+                None
+            }
+        }
+        "Scene Voxels" => {
+            quoted_id_after(message, "scene voxel object ").map(ValidationTarget::SceneVoxelObject)
+        }
+        _ => None,
+    }
+}
+
+fn quoted_id_after(message: &str, marker: &str) -> Option<String> {
+    let start = message.find(marker)? + marker.len();
+    let rest = message.get(start..)?;
+    let first_quote = rest.find('\'')?;
+    let quoted = rest.get(first_quote + 1..)?;
+    let second_quote = quoted.find('\'')?;
+    Some(quoted.get(..second_quote)?.to_string())
+}
+
+fn category_id_prefix(category: &str) -> &'static str {
+    match category {
+        "Layers" => "VAL-LAY",
+        "Placements" => "VAL-PLC",
+        "Scene Voxels" => "VAL-SCN",
+        _ => "VAL-GEN",
+    }
+}
+
+fn file_url_for_path(path: &std::path::Path) -> String {
+    format!("file:///{}", path.display().to_string().replace('\\', "/"))
+}
+
+fn collect_duplicate_id_issues<'a>(
+    issues: &mut Vec<String>,
+    label: &str,
+    ids: impl Iterator<Item = &'a str>,
+) {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for id in ids {
+        let trimmed = id.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        *counts.entry(trimmed.to_string()).or_default() += 1;
+    }
+    for (id, count) in counts {
+        if count > 1 {
+            issues.push(format!("duplicate {label} id '{id}' appears {count} times"));
+        }
+    }
+}
+
+fn point_in_map(x: i32, y: i32, map_width: u32, map_height: u32) -> bool {
+    x >= 0 && y >= 0 && (x as u32) < map_width && (y as u32) < map_height
+}
+
+fn rect_in_map(x: i32, y: i32, width: i32, height: i32, map_width: u32, map_height: u32) -> bool {
+    if x < 0 || y < 0 || width <= 0 || height <= 0 {
+        return false;
+    }
+    let right = x.saturating_add(width);
+    let bottom = y.saturating_add(height);
+    right <= map_width as i32 && bottom <= map_height as i32
+}
+
+fn float_rect_in_map(
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    map_width: u32,
+    map_height: u32,
+) -> bool {
+    x.is_finite()
+        && y.is_finite()
+        && width.is_finite()
+        && height.is_finite()
+        && width > 0.0
+        && height > 0.0
+        && x >= 0.0
+        && y >= 0.0
+        && x + width <= map_width as f32
+        && y + height <= map_height as f32
 }
 
 fn ui_text_row(ui: &mut egui::Ui, label: &str, value: &mut String) -> bool {
@@ -11661,11 +16110,7 @@ fn layer_tile_id_at(layer: &TileLayerDef, x: usize, y: usize) -> Option<String> 
 /// The projection uses an orthographic isometric view (X right, Y into screen, Z up).
 /// Each voxel is drawn as a filled dot/square colored from the model palette.
 /// Voxels are sorted back-to-front so closer voxels overdraw farther ones.
-fn draw_vox_isometric_preview(
-    painter: &egui::Painter,
-    rect: egui::Rect,
-    model: &VoxModel,
-) {
+fn draw_vox_isometric_preview(painter: &egui::Painter, rect: egui::Rect, model: &VoxModel) {
     if model.voxels.is_empty() || model.palette.is_empty() {
         painter.text(
             rect.center(),
@@ -11704,9 +16149,15 @@ fn draw_vox_isometric_preview(
         project(w, h, d),
     ];
     let min_x = corners.iter().map(|p| p.x).fold(f32::INFINITY, f32::min);
-    let max_x = corners.iter().map(|p| p.x).fold(f32::NEG_INFINITY, f32::max);
+    let max_x = corners
+        .iter()
+        .map(|p| p.x)
+        .fold(f32::NEG_INFINITY, f32::max);
     let min_y = corners.iter().map(|p| p.y).fold(f32::INFINITY, f32::min);
-    let max_y = corners.iter().map(|p| p.y).fold(f32::NEG_INFINITY, f32::max);
+    let max_y = corners
+        .iter()
+        .map(|p| p.y)
+        .fold(f32::NEG_INFINITY, f32::max);
     let span_x = (max_x - min_x).max(1.0);
     let span_y = (max_y - min_y).max(1.0);
     let scale = (rect.width() / span_x).min(rect.height() / span_y) * 0.88;
@@ -11731,13 +16182,25 @@ fn draw_vox_isometric_preview(
 
     for voxel in sorted {
         let color_index = voxel.color_index as usize;
-        let color = model.palette.get(color_index).copied().unwrap_or(
-            engine_assets::vox::VoxColor { r: 180, g: 60, b: 200, a: 255 },
-        );
+        let color =
+            model
+                .palette
+                .get(color_index)
+                .copied()
+                .unwrap_or(engine_assets::vox::VoxColor {
+                    r: 180,
+                    g: 60,
+                    b: 200,
+                    a: 255,
+                });
         if color.a == 0 {
             continue;
         }
-        let center = to_screen(voxel.x as f32 + 0.5, voxel.y as f32 + 0.5, voxel.z as f32 + 0.5);
+        let center = to_screen(
+            voxel.x as f32 + 0.5,
+            voxel.y as f32 + 0.5,
+            voxel.z as f32 + 0.5,
+        );
         if !rect.expand(dot_radius).contains(center) {
             continue;
         }

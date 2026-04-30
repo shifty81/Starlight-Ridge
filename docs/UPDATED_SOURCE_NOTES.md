@@ -31,3 +31,12 @@ This full source zip updates the project around a cleaner runtime art/data contr
 - The player should no longer look sliced into pieces while moving.
 - The player should collide with water, cliffs, trees, fences, and main interactable props.
 - A yellow `!` prompt should appear near interaction targets.
+
+## Phase 53l — Voxel Composition 3D Selection + Transform Handles
+
+- Added 3D hover hit testing for voxel panel instances, sockets, and selected-instance XYZ handles.
+- Added click selection sync between the 3D preview, 2D composition canvas, selected source panel, and selected socket.
+- Added drag-to-translate handles with configurable grid snap.
+- Added composition transform undo/redo controls for the 3D preview.
+- Rebuilds live preview data in memory after handle-based transforms.
+- Preserves the single-root egui shell rule; no gameplay code was changed.

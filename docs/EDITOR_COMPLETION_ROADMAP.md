@@ -29,7 +29,7 @@ The finish order below favors content safety first: real save paths, undo, valid
 
 ### Wired but incomplete
 
-- Native World -> 3D Viewport is debug bounds/preview only, not a real rendered 3D viewport.
+- Native World -> 3D Preview now has a shared `VoxelSceneRenderData` mesh preview with yaw/pitch/zoom controls, first-pass projected object-bounds picking, a selected-object context strip, and right-inspector handoff, but it is still egui-painted rather than a renderer-owned embedded GL viewport.
 - World voxel objects can be edited in the World Objects panel, inspector, and 2D viewport; trigger and voxel object footprints have explicit resize handles.
 - Voxel panel compositions export preview data, but no live 3D mesh/camera viewport consumes it yet.
 - Voxel rig preview has profile/metadata/validation/tool-button scaffolding, but no actual skeleton/attachment overlay viewport.
@@ -45,31 +45,30 @@ The finish order below favors content safety first: real save paths, undo, valid
 
 Current reality:
 
-- Game runtime rendering is OpenGL-backed, but it is still effectively 2D: tile map quads, sprite quads, prop sprite quads, debug grid, lighting overlay, and editor shell overlay.
-- There is no runtime 3D camera, perspective/orthographic 3D projection path, depth buffer scene graph, voxel mesh pipeline, material lighting model, or loaded `.vox` mesh draw path yet.
-- Native editor 3D preview is authoring-focused and egui-painted. It projects baked voxel-panel preview data onto a 2D canvas with orbit/pan/zoom controls, grid, axis, labels, diagnostics, and selection highlights.
+- Game runtime rendering has an OpenGL voxel mesh path with depth testing, camera matrices, and `VoxelSceneRenderData` draw support layered with the existing 2D tile/sprite render path.
+- Runtime scene voxel objects are loaded from `content/scenes/<map>/voxel_objects.ron`, resolved through `content/voxel_assets/voxel_asset_registry.ron`, and converted from real `.vox` sources into the shared render contract.
+- Native editor 3D preview is still egui-painted, but World -> 3D Preview now consumes the same combined `VoxelSceneRenderData` vertices/indices/bounds/object ranges that the game renderer draws, including editable map voxel placements plus scene voxel objects. Scene voxel selection now tries the shared render-contract projected-bounds picker first, then falls back to the painted preview bounds.
 - Voxel panel composition export exists: compositions can bake preview mesh/voxel data to RON for a future renderer to consume.
-- World voxel objects are now editable and draggable in the 2D World viewport, but they are not rendered as 3D assets in editor or game.
+- World voxel objects are editable and draggable in the 2D World viewport, represented as selectable 3D volumes in the editor 3D preview, and rendered through the runtime shared voxel mesh payload path. The 3D preview now has direct orbit, move, footprint resize, and height-adjust tools for selected voxel placements, with dirty-state tracking until the shared mesh payload is saved/reloaded.
 
 Estimated implementation progress:
 
 - Data contracts and editor-side voxel placement: about 55-65% of the foundation.
 - Voxel panel authoring/export path: about 60-70% of the authoring foundation.
-- Real native editor 3D viewport: about 20-30%, because camera/projection UX exists conceptually but the renderer is not real 3D yet.
-- Real game 3D rendering: about 10-20%, because the window/OpenGL bootstrap exists but the scene, camera, mesh, depth, and asset pipelines do not.
+- Real native editor 3D viewport: about 50-60%, because the editor can inspect the real scene mesh contract, select scene voxel objects from projected 3D bounds, edit map voxel placements directly in the 3D preview, and hand those selections to the right inspector, but it is not yet an embedded renderer-owned GL viewport with triangle/object-ID picking.
+- Real game 3D rendering: about 35-45%, because scene voxel meshes, depth, camera projection, and `.vox` loading exist, but the broader scene graph, lighting/material model, picking, and gameplay integration remain thin.
 
 Shortest viable path to real 3D:
 
-1. Add a small renderer-owned `VoxelMeshRenderData` contract: vertices, indices, colors/material IDs, bounds, transform, and optional selection ID.
-2. Add an OpenGL voxel mesh pipeline in `engine_render_gl`: depth test, camera matrices, simple directional light, grid, and colored cube/mesh draw.
-3. Feed voxel panel composition exports into that pipeline inside the native editor 3D Preview tab.
-4. Add a World 3D preview that renders map floor bounds plus `voxel_objects.ron` placements.
-5. Add picking: screen ray -> object bounds -> selection ID -> right inspector.
-6. Move game runtime from sprite-only prop representation to optional voxel-object render instances while preserving the current 2D map path.
+1. Finish the embedded editor GL viewport handoff so World -> 3D Preview is renderer-owned, not egui-painted.
+2. Replace projected-bounds picking with renderer/object-ID picking. The shared render contract now carries object-keyed index ranges and bounds, and `engine_render_gl` now has an offscreen object-ID framebuffer/pick shader API. The remaining work is wiring that API into the embedded editor viewport once the egui surface handoff exists.
+3. Feed voxel panel composition exports into the shared `VoxelSceneRenderData` path.
+4. Add selection/highlight IDs and transform gizmos to the voxel render contract.
+5. Expand runtime voxel rendering from scene preview objects into gameplay-aware voxel object instances while preserving the current 2D map path.
 
 ### Stubbed / placeholder systems still visible
 
-- `crates/editor_inspector`, `crates/editor_tools`, `crates/editor_undo`, and `crates/editor_data_bridge` are still effectively init-only/stub crates.
+- `crates/editor_inspector` and `crates/editor_tools` are still effectively init-only/stub crates; `crates/editor_data_bridge` now owns the first shared path/load/save/backup/dirty-state helpers but still needs broader editor and web-editor adoption.
 - `content/editor_tools/dynamic_voxelizer_commands.ron` points at an offline placeholder script.
 - `content/editor_tools/phase53f_voxel_rig_preview_commands.ron` points at a placeholder rig preview script.
 - Dynamic voxelizer, voxel rig, spring bone, and attachment systems are contracts/specs first; implementation is still pending.
@@ -96,6 +95,7 @@ Goal: make the editor shell intuitive before adding more feature surface.
 - [x] Extend the selection-aware inspector to voxel object selections.
 - [x] Extend the selection-aware inspector to pixel selection.
 - [x] Extend the selection-aware inspector to voxel panel selection.
+- [x] Extend the selection-aware inspector to runtime scene voxel object selections from World -> 3D Preview.
 - [x] Merge props, spawns, and triggers into a World Objects parent panel with type filters.
 - [x] Extend World Objects to include voxel object placement records.
 - Track the full shell audit in `docs/EDITOR_UX_AUDIT.md`.
@@ -120,10 +120,11 @@ Done when: `Ctrl+Z`/`Ctrl+Y` works consistently across map, pixel, voxel panel, 
 
 Goal: stop keeping editor logic trapped in the giant egui app file.
 
-- Implement `editor_data_bridge` as the shared read/write layer for content assets.
+- [x] Start `editor_data_bridge` as the shared read/write layer for content assets with centralized map content paths, map/layer/placement load wrappers, backup save outcomes, dirty-state models, temp-write saves, and unit coverage.
+- Extend `editor_data_bridge` adoption across the remaining direct save/load paths, including web-editor adoption.
 - Implement `editor_inspector` as reusable typed inspector models for tiles, layers, props, spawns, triggers, voxel objects, and data records.
 - Keep egui rendering thin: panels should call bridge/inspector APIs instead of hand-editing raw data everywhere.
-- Add validation messages with stable IDs and source file paths.
+- [x] Add validation messages with stable IDs and source file paths.
 
 Done when: native and web editors can use the same bridge for map/layer/object edits.
 
@@ -145,7 +146,7 @@ Goal: the native World workspace can fully author maps.
 - Add collision overlay editing or collision-source inspection.
 - Add map resize/crop/expand tools with safeguards.
 - Add multi-select transform operations and richer point-marker handle affordances for props and spawns.
-- Add per-map validation for missing tile IDs, bad layer dimensions, duplicate spawns, invalid triggers, and bad prop references.
+- [x] Add per-map validation for missing tile IDs, bad layer dimensions, duplicate IDs, invalid trigger target maps, placement bounds, missing voxel object sources, and scene voxel source health.
 
 Done when: a map can be created or substantially edited from the native editor without manually touching RON.
 
@@ -244,7 +245,7 @@ Done when: `cargo test`, content validation, native editor smoke test, and web e
 
 ## Suggested Immediate Next Patch Order
 
-1. Start `editor_data_bridge` so native and web edits stop diverging.
+1. Expand `editor_data_bridge` adoption across remaining direct save/load paths and add recent-backup display in the UI.
 2. Move pixel editor and voxel panel editor histories onto shared `editor_undo`.
 3. Replace voxel rig/dynamic voxelizer placeholder command runners with real command execution and validation.
 4. Build the first real Data editor: items first, then crops, NPCs, dialogue, quests, shops.

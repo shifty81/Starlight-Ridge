@@ -259,8 +259,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "editor_core",
+ "editor_data_bridge",
  "editor_undo",
  "eframe",
+ "egui_glow",
  "engine_assets",
  "engine_audio",
  "engine_debug",
@@ -1036,6 +1038,7 @@ dependencies = [
  "game_data",
  "game_world",
  "log",
+ "serde",
 ]
 
 [[package]]
@@ -1084,6 +1087,7 @@ dependencies = [
  "egui-wgpu",
  "egui-winit",
  "egui_glow",
+ "glow",
  "glutin",
  "glutin-winit",
  "image",
@@ -1175,7 +1179,7 @@ checksum = "a3b28d39ab6c0cac238190e6cb1e8c9047d02cb470ab942a7a3302e4cb3a8e74"
 dependencies = [
  "bytemuck",
  "egui",
- "glow 0.17.0",
+ "glow",
  "log",
  "memoffset",
  "profiling",
@@ -1268,7 +1272,7 @@ dependencies = [
  "game_data",
  "game_world",
  "glam",
- "glow 0.16.0",
+ "glow",
  "glutin",
  "image",
  "log",
@@ -1867,18 +1871,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19fc433e8437a212d1b6f1e68c7824af3aed907da60afa994e7f542d18d12aa9"
 dependencies = [
  "serde_core",
-]
-
-[[package]]
-name = "glow"
-version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5e5ea60d70410161c8bf5da3fdfeaa1c72ed2c15f8bbb9d19fe3a4fad085f08"
-dependencies = [
- "js-sys",
- "slotmap",
- "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]
@@ -4707,7 +4699,7 @@ dependencies = [
  "bytemuck",
  "cfg-if",
  "cfg_aliases",
- "glow 0.17.0",
+ "glow",
  "glutin_wgl_sys",
  "gpu-allocator",
  "gpu-descriptor",

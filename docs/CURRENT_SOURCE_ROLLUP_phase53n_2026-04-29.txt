@@ -1,0 +1,38 @@
+Starlight Ridge Current Source Rollup — Phase 53n
+Date: 2026-04-29
+
+This source rollup includes the current editor patch chain:
+
+1. Phase 53l — Voxel Composition 3D Selection + Transform Handles
+2. Phase 53m — Voxel Composition 3D Connection Editing + Snap Preview
+3. Phase 53m.1 — Compile fix for duplicate instance mutable borrow
+4. Phase 53n — Voxel Composition 3D Rotation / Mirror / Constraints
+
+Primary changed implementation file:
+- crates/app/src/egui_editor.rs
+
+Added/retained docs:
+- docs/PHASE53L_VOXEL_COMPOSITION_3D_SELECTION_TRANSFORM_HANDLES.md
+- docs/PHASE53M_VOXEL_COMPOSITION_3D_CONNECTION_EDITING_SNAP_PREVIEW.md
+- docs/PHASE53N_VOXEL_COMPOSITION_3D_ROTATION_MIRROR_CONSTRAINTS.md
+- docs/PATCH_MANIFEST_phase53m.txt
+- docs/PATCH_MANIFEST_phase53m_1.txt
+- docs/PATCH_MANIFEST_phase53n.txt
+
+Local validation recommended:
+- cargo check --workspace
+- RUN_EDITOR_DEBUG.bat
+
+Manual validation focus:
+- Assets > Voxel Panels > 3D Preview
+- select instances/sockets in 3D
+- drag X/Y/Z handles
+- undo/redo transforms
+- create/delete socket connections
+- rotate/mirror selected instances
+- select/delete connection lines
+- verify preview diagnostics and overlap warnings
+- verify only one top-level egui editor shell renders
+
+Note:
+Rust/Cargo was not available in the packaging container, so this rollup was assembled and statically inspected but not cargo-checked here.

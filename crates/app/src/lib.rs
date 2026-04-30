@@ -5,14 +5,14 @@ use std::process::Command;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
-use engine_assets::vox::load_vox_file;
 use engine_assets::AssetRoot;
+use engine_assets::vox::load_vox_file;
 use engine_audio::AudioBootstrap;
 use engine_debug::DebugOverlayState;
 use engine_input::{InputSnapshot, handle_keyboard_event};
 use engine_render_gl::{
     EditorShellRenderState, RenderBootstrap, SpriteInstance, SpriteRenderData, TileInstance,
-    TileMapRenderData, VoxelSceneRenderData, VoxelVertex, WorldLighting,
+    TileMapRenderData, VoxelSceneObjectRange, VoxelSceneRenderData, VoxelVertex, WorldLighting,
 };
 use engine_time::FrameTimer;
 use engine_window::{WindowConfig, create_gl_window};
@@ -33,6 +33,9 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::WindowId;
 
 mod egui_editor;
+mod voxel_scene;
+
+use voxel_scene::build_scene_voxel_render_data;
 
 #[derive(Debug, Clone, Deserialize)]
 struct VoxelObjectPlacementList {
@@ -1027,6 +1030,7 @@ fn build_voxel_scene_render_data(
 
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
+    let mut object_ranges = Vec::new();
     let mut bounds_min = glam::Vec3::splat(f32::INFINITY);
     let mut bounds_max = glam::Vec3::splat(f32::NEG_INFINITY);
 
@@ -1044,6 +1048,7 @@ fn build_voxel_scene_render_data(
         bounds_max = bounds_max.max(max);
 
         // Try loading the actual .vox source file for real voxel geometry.
+        let index_start = indices.len() as u32;
         let vox_path = if object.source_path.is_empty() {
             None
         } else {
@@ -1054,13 +1059,7 @@ fn build_voxel_scene_render_data(
             .filter(|p| p.exists())
             .and_then(|p| load_vox_file(p).ok())
             .map(|model| {
-                push_vox_model_mesh(
-                    &mut vertices,
-                    &mut indices,
-                    &model,
-                    min,
-                    max,
-                );
+                push_vox_model_mesh(&mut vertices, &mut indices, &model, min, max);
             })
             .is_some();
 
@@ -1068,6 +1067,38 @@ fn build_voxel_scene_render_data(
             let base_color = color_for_voxel_object(object);
             push_voxel_prism_mesh(&mut vertices, &mut indices, min, max, base_color);
         }
+        let index_count = indices.len() as u32 - index_start;
+        if index_count > 0 {
+            object_ranges.push(VoxelSceneObjectRange {
+                object_key: format!("world:{}", object.id),
+                label: object.display_name.clone(),
+                index_start,
+                index_count,
+                bounds_min: min.to_array(),
+                bounds_max: max.to_array(),
+            });
+        }
+    }
+
+    if let Some(scene_render_data) =
+        build_scene_voxel_render_data(project_root, map_id, Some(tile_map))?
+    {
+        let vertex_offset = vertices.len() as u32;
+        let index_offset = indices.len() as u32;
+        let scene_object_ranges = scene_render_data.object_ranges.clone();
+        vertices.extend(scene_render_data.vertices);
+        indices.extend(
+            scene_render_data
+                .indices
+                .into_iter()
+                .map(|index| index + vertex_offset),
+        );
+        object_ranges.extend(scene_object_ranges.into_iter().map(|mut range| {
+            range.index_start += index_offset;
+            range
+        }));
+        bounds_min = bounds_min.min(glam::Vec3::from_array(scene_render_data.bounds_min));
+        bounds_max = bounds_max.max(glam::Vec3::from_array(scene_render_data.bounds_max));
     }
 
     if vertices.is_empty() || indices.is_empty() {
@@ -1092,6 +1123,7 @@ fn build_voxel_scene_render_data(
         indices,
         bounds_min: bounds_min.to_array(),
         bounds_max: bounds_max.to_array(),
+        object_ranges,
     }))
 }
 
@@ -1208,19 +1240,88 @@ fn push_vox_model_mesh(
     let vh = model.height.max(1) as f32;
     let vd = model.depth.max(1) as f32;
     let world_size = world_max - world_min;
-    let scale = glam::Vec3::new(
-        world_size.x / vw,
-        world_size.y / vh,
-        world_size.z / vd,
-    );
+    let scale = glam::Vec3::new(world_size.x / vw, world_size.y / vh, world_size.z / vd);
+    let occupied = model
+        .voxels
+        .iter()
+        .map(|voxel| (voxel.x, voxel.y, voxel.z))
+        .collect::<HashSet<_>>();
+    let face_directions = [
+        (
+            (0_i16, 0_i16, -1_i16),
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ],
+            0.64,
+        ),
+        (
+            (0_i16, 0_i16, 1_i16),
+            [
+                [0.0, 0.0, 1.0],
+                [0.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0],
+                [1.0, 0.0, 1.0],
+            ],
+            1.08,
+        ),
+        (
+            (0_i16, -1_i16, 0_i16),
+            [
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0],
+            ],
+            0.82,
+        ),
+        (
+            (1_i16, 0_i16, 0_i16),
+            [
+                [1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0],
+                [1.0, 1.0, 1.0],
+                [1.0, 1.0, 0.0],
+            ],
+            0.92,
+        ),
+        (
+            (0_i16, 1_i16, 0_i16),
+            [
+                [1.0, 1.0, 0.0],
+                [1.0, 1.0, 1.0],
+                [0.0, 1.0, 1.0],
+                [0.0, 1.0, 0.0],
+            ],
+            0.76,
+        ),
+        (
+            (-1_i16, 0_i16, 0_i16),
+            [
+                [0.0, 1.0, 0.0],
+                [0.0, 1.0, 1.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0],
+            ],
+            0.70,
+        ),
+    ];
 
     for voxel in &model.voxels {
         let color_index = voxel.color_index as usize;
-        let palette_color = model
-            .palette
-            .get(color_index)
-            .copied()
-            .unwrap_or(engine_assets::vox::VoxColor { r: 180, g: 60, b: 200, a: 255 });
+        let palette_color =
+            model
+                .palette
+                .get(color_index)
+                .copied()
+                .unwrap_or(engine_assets::vox::VoxColor {
+                    r: 180,
+                    g: 60,
+                    b: 200,
+                    a: 255,
+                });
         if palette_color.a == 0 {
             continue;
         }
@@ -1229,11 +1330,50 @@ fn push_vox_model_mesh(
         let b = palette_color.b as f32 / 255.0;
         let base_color = [r, g, b, 1.0];
 
-        let vmin = world_min
-            + glam::Vec3::new(voxel.x as f32, voxel.y as f32, voxel.z as f32) * scale;
+        let vmin =
+            world_min + glam::Vec3::new(voxel.x as f32, voxel.y as f32, voxel.z as f32) * scale;
         let vmax = vmin + scale;
-        push_voxel_prism_mesh(vertices, indices, vmin, vmax, base_color);
+        let min = [vmin.x, vmin.y, vmin.z];
+        let max = [vmax.x, vmax.y, vmax.z];
+        let shade_faces = face_directions.iter().filter(|(delta, _, _)| {
+            let neighbor = (
+                voxel.x as i16 + delta.0,
+                voxel.y as i16 + delta.1,
+                voxel.z as i16 + delta.2,
+            );
+            neighbor.0 < 0
+                || neighbor.1 < 0
+                || neighbor.2 < 0
+                || !occupied.contains(&(neighbor.0 as u8, neighbor.1 as u8, neighbor.2 as u8))
+        });
+
+        for (_, corners, shade) in shade_faces {
+            let face_color = shade_color(base_color, *shade);
+            push_voxel_face_mesh(vertices, indices, min, max, corners, face_color);
+        }
     }
+}
+
+fn push_voxel_face_mesh(
+    vertices: &mut Vec<VoxelVertex>,
+    indices: &mut Vec<u32>,
+    min: [f32; 3],
+    max: [f32; 3],
+    corners: &[[f32; 3]; 4],
+    color: [f32; 4],
+) {
+    let base = vertices.len() as u32;
+    for corner in corners {
+        vertices.push(VoxelVertex {
+            position: [
+                min[0] + (max[0] - min[0]) * corner[0],
+                min[1] + (max[1] - min[1]) * corner[1],
+                min[2] + (max[2] - min[2]) * corner[2],
+            ],
+            color,
+        });
+    }
+    indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
 fn build_terrain_resolve_catalog(

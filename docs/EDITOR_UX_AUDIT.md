@@ -136,7 +136,7 @@ Missing:
 - Active object inspector for selected prop/spawn/trigger.
 - Layer inspector for selected layer ID, visibility, future opacity/lock, dimensions, legend.
 - Map inspector for metadata, dimensions, tileset, content file health.
-- Validation inspector with clickable issue source paths.
+- Validation inspector for current map, placement, and scene voxel issues, with stable issue IDs, severity labels, and clickable source file paths.
 - Dirty/save-state inspector showing which files are dirty.
 
 Recommended right inspector tabs:
@@ -165,7 +165,7 @@ Still missing:
 - Multi-select edit operations.
 - Collision overlay editing or collision-source inspection.
 - Map resize/crop/expand.
-- Per-map validation for duplicate spawn IDs, invalid trigger target maps, bad prop references, and placement bounds.
+- Per-map validation now covers duplicate IDs, invalid trigger target maps, placement bounds, layer dimensions, missing tile IDs, missing voxel object sources, and scene voxel source health; issue rows now include stable IDs, severity labels, and clickable source file paths.
 - Richer point-marker handle affordances for props/spawns.
 - Dirty-state save all for layers plus placement files.
 
@@ -262,14 +262,14 @@ The biggest maintenance issue is that `crates/app/src/egui_editor.rs` owns too m
 
 Stub or thin crates that should absorb this:
 
-- `editor_data_bridge`: typed load/save/backup/dirty-state layer for editor content.
+- `editor_data_bridge`: typed path/load/save/backup/dirty-state layer is started; broader native and web editor adoption are still needed.
 - `editor_inspector`: reusable selected-object inspector models.
 - `editor_tools`: command/tool definitions, shortcuts, and tool context.
 - `editor_undo`: already started, but needs adoption by pixel, voxel, placement, metadata, and data editors.
 
 Recommended extraction order:
 
-1. Move save/load/backup and dirty-state models into `editor_data_bridge`.
+1. Finish adopting `editor_data_bridge` for remaining save/load paths and dirty-state UI.
 2. Move prop/spawn/trigger/layer inspector models into `editor_inspector`.
 3. Move tool definitions and shortcut routing into `editor_tools`.
 4. Keep `egui_editor.rs` as rendering glue.
@@ -345,11 +345,17 @@ Initial cleanup now completed:
 - World Map Paint select mode now supports click selection and grid-snapped drag movement for props, spawns, triggers, and voxel objects.
 - World Map Paint select mode now supports marquee selection for world placements and bottom-right resize handles for trigger and voxel object footprints.
 - Map layers now have lock and opacity metadata with editor controls; locked layers block paint/fill/erase and opacity affects preview rendering.
+- World now has a 3D Preview tab that consumes the shared voxel scene render contract, with yaw/pitch/zoom controls, orbit/move/resize/height interaction modes, mesh/bounds/object-range diagnostics, map-layer terrain floor rendering, editable voxel placement volumes, selected-object highlighting, shared render-contract projected object picking, direct move/footprint/height edits for selected voxel placements, and handoff to the right inspector/object list. It is still egui-painted, but `engine_render_gl` now has the offscreen object-ID framebuffer/pick shader API needed for native GL selection once the embedded editor viewport is wired.
+- The right inspector now has a Validation tab backed by shared map validation covering layers, placements, voxel objects, and scene voxel preview data; the command-strip Validate action opens both bottom and right-side validation, with stable issue IDs and source links.
+- Locked layers now emit validation warnings and the selected-layer inspector explains which edit modes are blocked while the layer is locked.
+- Validation rows can now focus named layers, props, spawns, triggers, voxel objects, and scene voxel objects directly from the issue list.
+- `editor_data_bridge` now centralizes map content paths, generic RON backup/temp-write saves, dirty-state models, and several native editor save routes.
 
 Remaining near-term sequence:
 
-1. Start `editor_data_bridge` so native and web edits stop diverging.
-2. Move pixel editor and voxel panel editor histories onto shared `editor_undo`.
-3. Add per-map validation for duplicate spawns, invalid triggers, bad prop references, bad dimensions, and locked-layer edit warnings.
+1. Finish the renderer-owned editor 3D viewport handoff and replace bounds picking with renderer/object-ID picking.
+2. Expand `editor_data_bridge` adoption across remaining direct save/load paths and add recent-backup display in the UI.
+3. Move pixel editor and voxel panel editor histories onto shared `editor_undo`.
+4. Replace voxel rig/dynamic voxelizer placeholder command runners with real command execution and validation.
 
 That sequence will make the editor easier to reason about and will reduce future wiring work.

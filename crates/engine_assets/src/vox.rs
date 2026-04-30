@@ -1,4 +1,4 @@
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,13 +31,13 @@ pub struct VoxModel {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoxAssetInfo {
     pub id: String,
-    pub path: PathBuf,
+    pub absolute_path: PathBuf,
     pub relative_path: String,
     pub width: u32,
     pub height: u32,
     pub depth: u32,
-    pub voxel_count: usize,
-    pub palette_colors: usize,
+    pub voxel_count: u32,
+    pub palette_colors: u32,
 }
 
 impl VoxModel {
@@ -48,7 +48,8 @@ impl VoxModel {
 
 pub fn load_vox_file(path: impl AsRef<Path>) -> anyhow::Result<VoxModel> {
     let path = path.as_ref();
-    let bytes = fs::read(path).with_context(|| format!("failed to read .vox file {}", path.display()))?;
+    let bytes =
+        fs::read(path).with_context(|| format!("failed to read .vox file {}", path.display()))?;
     parse_vox_bytes(&bytes).with_context(|| format!("failed to parse .vox file {}", path.display()))
 }
 
@@ -111,19 +112,29 @@ pub fn scan_vox_files(project_root: impl AsRef<Path>) -> anyhow::Result<Vec<VoxA
                     .and_then(|name| name.to_str())
                     .unwrap_or("vox_model")
                     .chars()
-                    .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' })
+                    .map(|c| {
+                        if c.is_ascii_alphanumeric() {
+                            c.to_ascii_lowercase()
+                        } else {
+                            '_'
+                        }
+                    })
                     .collect::<String>();
                 id = id.trim_matches('_').to_string();
 
                 assets.push(VoxAssetInfo {
-                    id: if id.is_empty() { "vox_model".to_string() } else { id },
-                    path,
+                    id: if id.is_empty() {
+                        "vox_model".to_string()
+                    } else {
+                        id
+                    },
+                    absolute_path: path,
                     relative_path,
                     width: model.width,
                     height: model.height,
                     depth: model.depth,
-                    voxel_count: model.voxels.len(),
-                    palette_colors: model.palette.len(),
+                    voxel_count: model.voxels.len() as u32,
+                    palette_colors: model.palette.len() as u32,
                 });
             }
             Err(error) => {
@@ -222,7 +233,10 @@ fn parse_xyzi_chunk(content: &[u8], state: &mut VoxParseState) -> anyhow::Result
         .checked_add(count.checked_mul(4).context("XYZI voxel count overflow")?)
         .context("XYZI size overflow")?;
     if content.len() < expected {
-        bail!("XYZI chunk expected {expected} bytes but found {}", content.len());
+        bail!(
+            "XYZI chunk expected {expected} bytes but found {}",
+            content.len()
+        );
     }
 
     state.voxels.clear();
@@ -263,19 +277,28 @@ fn read_u32(bytes: &[u8], offset: usize) -> anyhow::Result<u32> {
     let slice = bytes
         .get(offset..offset + 4)
         .ok_or_else(|| anyhow::anyhow!("unexpected EOF while reading u32 at byte {offset}"))?;
-    Ok(u32::from_le_bytes(slice.try_into().expect("slice length checked")))
+    Ok(u32::from_le_bytes(
+        slice.try_into().expect("slice length checked"),
+    ))
 }
 
 fn read_i32(bytes: &[u8], offset: usize) -> anyhow::Result<i32> {
     let slice = bytes
         .get(offset..offset + 4)
         .ok_or_else(|| anyhow::anyhow!("unexpected EOF while reading i32 at byte {offset}"))?;
-    Ok(i32::from_le_bytes(slice.try_into().expect("slice length checked")))
+    Ok(i32::from_le_bytes(
+        slice.try_into().expect("slice length checked"),
+    ))
 }
 
 fn default_palette() -> Vec<VoxColor> {
     let mut palette = Vec::with_capacity(256);
-    palette.push(VoxColor { r: 0, g: 0, b: 0, a: 0 });
+    palette.push(VoxColor {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0,
+    });
     for index in 1..=255u8 {
         palette.push(VoxColor {
             r: index,

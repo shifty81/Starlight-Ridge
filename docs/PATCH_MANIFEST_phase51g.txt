@@ -1,0 +1,20 @@
+Starlight Ridge Phase 51G — Character Concept Source Integration
+
+Base requested: Starlight-Ridge-main
+Latest source patch applied: Starlight_Ridge_source_2026-04-27_07-31-41
+
+Added uploaded character concepts as source/reference assets:
+- assets/art_source/character_concepts/uploaded_human_concept_01.png
+- assets/art_source/character_concepts/uploaded_human_concept_02.png
+- assets/art_source/character_concepts/uploaded_human_concept_03.png
+- assets/art_source/character_concepts/uploaded_human_concept_04.png
+
+Added integration docs and metadata:
+- assets/art_source/character_concepts/README.md
+- content/editor_character/character_concepts_phase51g.ron
+- docs/patches/README_PATCH_PHASE51G_CHARACTER_CONCEPT_INTEGRATION.md
+
+Notes:
+- Concept images are included as art-source references, not final runtime sprite sheets.
+- Current runtime character assets remain under assets/textures/characters.
+- Next step is converting these concepts into normalized male/female sprite bases and paperdoll layers.

@@ -1,0 +1,11 @@
+Starlight Ridge Phase 51h — egui Pixel Editor Full Implementation
+
+Changed files:
+- crates/app/src/egui_editor.rs
+- docs/patches/README_PATCH_PHASE51H_EGUI_PIXEL_EDITOR_FULL_IMPLEMENTATION.md
+- PATCH_MANIFEST_phase51h.txt
+
+Summary:
+- Finalizes the egui PNG-backed Pixel Editor workflow.
+- Uses phase51h texture/cache naming and backup naming.
+- Keeps the implementation inside the egui editor path only.
