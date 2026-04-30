@@ -1,0 +1,28 @@
+Phase 55a — Native Editor App Split Manifest + Launcher Contracts
+
+Files changed:
+- crates/app/src/lib.rs
+- crates/app/src/egui_editor.rs
+- content/editor_tools/native_editor_apps.ron
+
+Files added:
+- crates/app/src/bin/character_editor.rs
+- crates/app/src/bin/voxel_panel_editor.rs
+- crates/app/src/bin/world_editor.rs
+- crates/app/src/bin/pixel_atlas_editor.rs
+- crates/app/src/bin/animation_rig_editor.rs
+- crates/app/src/bin/asset_import_editor.rs
+- RUN_CHARACTER_EDITOR_DEBUG.bat
+- RUN_VOXEL_PANEL_EDITOR_DEBUG.bat
+- RUN_WORLD_EDITOR_DEBUG.bat
+- RUN_PIXEL_ATLAS_EDITOR_DEBUG.bat
+- RUN_ANIMATION_RIG_EDITOR_DEBUG.bat
+- RUN_ASSET_IMPORT_EDITOR_DEBUG.bat
+- docs/PHASE55A_NATIVE_EDITOR_APP_SPLIT_LAUNCHER_CONTRACTS.md
+- docs/PATCH_MANIFEST_phase55a.txt
+
+Notes:
+- This is a launcher-contract phase only.
+- The focused binaries still use the same stable egui shell.
+- Tool internals are intentionally not moved yet.
+- Character Editor extraction should be Phase 55b.

@@ -297,6 +297,10 @@ pub fn validate_registry(registry: &ContentRegistry) -> anyhow::Result<()> {
         validate_phase51_world_contracts(registry)?;
     }
 
+    if registry.has_phase54a_voxel_contracts() {
+        validate_phase54a_voxel_contracts(registry)?;
+    }
+
     Ok(())
 }
 
@@ -1453,6 +1457,118 @@ fn validate_phase51_world_contracts(registry: &ContentRegistry) -> anyhow::Resul
             "scene bake contract '{}' has empty target_map_dir",
             bake.id
         );
+    }
+
+    Ok(())
+}
+
+fn validate_phase54a_voxel_contracts(registry: &ContentRegistry) -> anyhow::Result<()> {
+    let mut known_assets = HashSet::new();
+
+    for asset_registry in registry.voxel_asset_registries.values() {
+        ensure!(
+            !asset_registry.phase.trim().is_empty(),
+            "voxel asset registry has empty phase"
+        );
+        ensure!(
+            asset_registry.default_voxels_per_tile > 0,
+            "voxel asset registry '{}' has invalid default_voxels_per_tile {}",
+            asset_registry.phase,
+            asset_registry.default_voxels_per_tile
+        );
+        ensure!(
+            !asset_registry.assets.is_empty(),
+            "voxel asset registry '{}' has no assets",
+            asset_registry.phase
+        );
+
+        let mut local_ids = HashSet::new();
+        for asset in &asset_registry.assets {
+            ensure!(
+                !asset.id.trim().is_empty(),
+                "voxel asset registry '{}' has asset with empty id",
+                asset_registry.phase
+            );
+            ensure!(
+                local_ids.insert(asset.id.as_str()),
+                "voxel asset registry '{}' has duplicate asset id '{}'",
+                asset_registry.phase,
+                asset.id
+            );
+            known_assets.insert(asset.id.as_str());
+            ensure!(
+                !asset.source_path.trim().is_empty(),
+                "voxel asset '{}' has empty source_path",
+                asset.id
+            );
+            ensure!(
+                asset.voxels_per_tile > 0,
+                "voxel asset '{}' has invalid voxels_per_tile {}",
+                asset.id,
+                asset.voxels_per_tile
+            );
+            ensure!(
+                asset.scale > 0.0,
+                "voxel asset '{}' has invalid scale {}",
+                asset.id,
+                asset.scale
+            );
+            ensure!(
+                !asset.material_profile.trim().is_empty(),
+                "voxel asset '{}' has empty material_profile",
+                asset.id
+            );
+        }
+    }
+
+    for object_set in registry.voxel_object_sets.values() {
+        ensure!(
+            !object_set.id.trim().is_empty(),
+            "voxel object set has empty id"
+        );
+        ensure!(
+            !object_set.scene_id.trim().is_empty(),
+            "voxel object set '{}' has empty scene_id",
+            object_set.id
+        );
+        ensure!(
+            registry.maps.contains_key(&object_set.scene_id),
+            "voxel object set '{}' references missing map/scene '{}'",
+            object_set.id,
+            object_set.scene_id
+        );
+
+        let mut object_ids = HashSet::new();
+        for object in &object_set.objects {
+            ensure!(
+                !object.id.trim().is_empty(),
+                "voxel object set '{}' has object with empty id",
+                object_set.id
+            );
+            ensure!(
+                object_ids.insert(object.id.as_str()),
+                "voxel object set '{}' has duplicate object id '{}'",
+                object_set.id,
+                object.id
+            );
+            ensure!(
+                known_assets.contains(object.asset_id.as_str()),
+                "voxel object '{}' references missing voxel asset '{}'",
+                object.id,
+                object.asset_id
+            );
+            ensure!(
+                object.scale > 0.0,
+                "voxel object '{}' has invalid scale {}",
+                object.id,
+                object.scale
+            );
+            ensure!(
+                !object.layer.trim().is_empty(),
+                "voxel object '{}' has empty layer",
+                object.id
+            );
+        }
     }
 
     Ok(())

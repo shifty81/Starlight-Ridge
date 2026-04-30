@@ -1,0 +1,19 @@
+Phase 54a_1 — Build Fix + Standalone Editor Extraction Foundation
+
+Patched files:
+- crates/app/src/egui_editor.rs
+- crates/app/src/voxel_scene.rs
+
+Added files:
+- docs/PHASE54A_1_BUILD_FIX_EDITOR_EXTRACTION_FOUNDATION.md
+- docs/PATCH_MANIFEST_phase54a_1.txt
+- content/editor_tools/native_editor_apps.ron
+
+Build errors addressed:
+- E0432 unresolved import super::voxel_scene::ScenePivotMode
+- E0004 non-exhaustive VoxelPivotMode match missing Center and Origin
+
+Notes:
+- This patch intentionally does not continue the web editor path.
+- The next split should be native standalone editors.
+- Cargo check could not be run in this container because Rust/Cargo is not installed here.

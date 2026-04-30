@@ -41,9 +41,14 @@ pub fn generate_registry_templates(project_root: impl AsRef<Path>) -> anyhow::Re
         let model = vox_writer::placeholder_model(profile.dimensions, profile.generator_kind);
         let path = root.join(&profile.output_path);
         if let Some(parent) = path.parent() {
+<<<<<<< Updated upstream
             fs::create_dir_all(parent).with_context(|| {
                 format!("failed to create parent dir for {}", path.display())
             })?;
+=======
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create parent dir for {}", path.display()))?;
+>>>>>>> Stashed changes
         }
         fs::write(&path, vox_writer::write_vox(&model)?)
             .with_context(|| format!("failed to write {}", path.display()))?;

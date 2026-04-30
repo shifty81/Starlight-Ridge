@@ -5,8 +5,8 @@ VoxelObjectSetDef(
         VoxelSceneObjectDef(
             id: "character_base_template_preview_a",
             asset_id: "character_base_template_adult_a_bald_clean",
-            position: [4.0, 4.0, 0.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
+            position: (4.0, 4.0, 0.0),
+            rotation_degrees: (0.0, 0.0, 0.0),
             scale: 1.0,
             layer: "editor_preview",
             tags: ["preview", "character_base_template"],
@@ -16,8 +16,8 @@ VoxelObjectSetDef(
         VoxelSceneObjectDef(
             id: "character_base_template_preview_b",
             asset_id: "character_base_template_adult_b_bald_clean",
-            position: [6.0, 4.0, 0.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
+            position: (6.0, 4.0, 0.0),
+            rotation_degrees: (0.0, 0.0, 0.0),
             scale: 1.0,
             layer: "editor_preview",
             tags: ["preview", "character_base_template"],

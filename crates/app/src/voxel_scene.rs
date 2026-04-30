@@ -6,6 +6,7 @@ use engine_assets::vox::{VoxModel, load_vox_file};
 use engine_render_gl::{
     TileMapRenderData, VoxelSceneObjectRange, VoxelSceneRenderData, VoxelVertex,
 };
+<<<<<<< Updated upstream
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -81,6 +82,9 @@ pub(crate) enum ScenePivotMode {
     GripPoint,
 }
 
+=======
+use game_data::defs::VoxelPivotMode;
+>>>>>>> Stashed changes
 #[derive(Debug, Clone)]
 pub(crate) struct SceneVoxelPreviewState {
     pub(crate) scene_id: String,
@@ -105,7 +109,11 @@ pub(crate) struct SceneVoxelPreviewEntry {
     pub(crate) collision_enabled: bool,
     pub(crate) interaction_id: Option<String>,
     pub(crate) source_exists: bool,
+<<<<<<< Updated upstream
     pub(crate) pivot_mode: ScenePivotMode,
+=======
+    pub(crate) pivot_mode: VoxelPivotMode,
+>>>>>>> Stashed changes
     pub(crate) pivot_offset: [f32; 3],
 }
 
@@ -130,6 +138,7 @@ pub(crate) fn load_scene_voxel_preview_state(
         return Ok(None);
     }
 
+<<<<<<< Updated upstream
     let SceneVoxelObjectSetFile::VoxelObjectSetDef(object_set) =
         game_data::loader::load_ron_file::<SceneVoxelObjectSetFile>(&object_set_path)
             .with_context(|| format!("failed to load {}", object_set_path.display()))?;
@@ -143,11 +152,23 @@ pub(crate) fn load_scene_voxel_preview_state(
         .map(|asset| match asset {
             SceneVoxelAssetFile::VoxelAssetDef(asset) => (asset.id.clone(), asset),
         })
+=======
+    let object_set = game_data::loader::load_voxel_object_set(&object_set_path)
+        .with_context(|| format!("failed to load {}", object_set_path.display()))?;
+    let asset_registry = game_data::loader::load_voxel_asset_registry(&asset_registry_path)
+        .with_context(|| format!("failed to load {}", asset_registry_path.display()))?;
+
+    let asset_lookup = asset_registry
+        .assets
+        .iter()
+        .map(|asset| (asset.id.as_str(), asset))
+>>>>>>> Stashed changes
         .collect::<HashMap<_, _>>();
 
     let entries = object_set
         .objects
         .into_iter()
+<<<<<<< Updated upstream
         .map(|object| match object {
             SceneVoxelObjectFile::VoxelSceneObjectDef(object) => {
                 let asset = asset_lookup.get(&object.asset_id);
@@ -190,6 +211,46 @@ pub(crate) fn load_scene_voxel_preview_state(
                     pivot_mode,
                     pivot_offset,
                 }
+=======
+        .map(|object| {
+            let asset = asset_lookup.get(object.asset_id.as_str()).copied();
+            let relative_source_path = asset
+                .map(|asset| asset.source_path.clone())
+                .unwrap_or_default();
+            let source_path = if relative_source_path.is_empty() {
+                project_root.to_path_buf()
+            } else {
+                project_root.join(&relative_source_path)
+            };
+            let voxels_per_tile = asset
+                .map(|asset| {
+                    asset
+                        .voxels_per_tile
+                        .max(asset_registry.default_voxels_per_tile)
+                        .max(1)
+                })
+                .unwrap_or(asset_registry.default_voxels_per_tile.max(1));
+            let (pivot_mode, pivot_offset) = asset
+                .map(|asset| (asset.pivot.mode, asset.pivot.offset))
+                .unwrap_or((VoxelPivotMode::FeetCenter, [0.0, 0.0, 0.0]));
+            SceneVoxelPreviewEntry {
+                object_id: object.id,
+                asset_id: object.asset_id,
+                source_exists: !relative_source_path.is_empty() && source_path.exists(),
+                source_path,
+                relative_source_path,
+                position: object.position,
+                rotation_degrees: object.rotation_degrees,
+                scale: object.scale,
+                asset_scale: asset.map(|asset| asset.scale).unwrap_or(1.0),
+                voxels_per_tile,
+                layer: object.layer,
+                tags: object.tags,
+                collision_enabled: object.collision_enabled,
+                interaction_id: object.interaction_id,
+                pivot_mode,
+                pivot_offset,
+>>>>>>> Stashed changes
             }
         })
         .collect::<Vec<_>>();
@@ -305,15 +366,31 @@ pub(crate) fn build_scene_voxel_render_data(
 }
 
 fn scene_asset_pivot(
+<<<<<<< Updated upstream
     pivot_mode: ScenePivotMode,
+=======
+    pivot_mode: VoxelPivotMode,
+>>>>>>> Stashed changes
     pivot_offset: [f32; 3],
     model: &VoxModel,
 ) -> glam::Vec3 {
     let base = match pivot_mode {
+<<<<<<< Updated upstream
         ScenePivotMode::FeetCenter => {
             glam::Vec3::new(model.width as f32 * 0.5, model.height as f32 * 0.5, 0.0)
         }
         ScenePivotMode::GripPoint => glam::Vec3::ZERO,
+=======
+        VoxelPivotMode::FeetCenter => {
+            glam::Vec3::new(model.width as f32 * 0.5, model.height as f32 * 0.5, 0.0)
+        }
+        VoxelPivotMode::Center => glam::Vec3::new(
+            model.width as f32 * 0.5,
+            model.height as f32 * 0.5,
+            model.depth as f32 * 0.5,
+        ),
+        VoxelPivotMode::Origin | VoxelPivotMode::GripPoint => glam::Vec3::ZERO,
+>>>>>>> Stashed changes
     };
     base + glam::Vec3::from_array(pivot_offset)
 }

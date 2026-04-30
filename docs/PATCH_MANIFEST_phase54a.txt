@@ -1,0 +1,24 @@
+Phase 54a — Voxel Source Packaging + Scene Loader Fix
+
+Modified files:
+- crates/app/src/voxel_scene.rs
+- crates/game_data/src/defs.rs
+- crates/game_data/src/loader.rs
+- crates/game_data/src/registry.rs
+- crates/game_data/src/validate.rs
+
+Verified existing source-packaging-critical files:
+- crates/game_data/src/lib.rs
+- crates/game_data/src/vox_rig.rs
+
+Added docs:
+- docs/PHASE54A_VOXEL_SOURCE_PACKAGING_SCENE_LOADER_FIX.md
+- docs/PATCH_MANIFEST_phase54a.txt
+
+Scope:
+- Fix scene voxel RON loader mismatch
+- Promote voxel registry/object-set contracts into game_data
+- Add registry loading and validation
+- Preserve single-root egui shell
+- No gameplay changes
+- No standalone editor extraction yet

@@ -3,7 +3,7 @@ use crate::defs::{
     EditorExportValidationPipelineDef, GeneratedSceneDraftDef, ItemDef, MapBundle, MapLayersDef,
     NpcDef, ProtectedLayerPolicyDef, QuestDef, SceneBakeContractDef, ScheduleDef, ShopDef,
     SpriteSheetDef, TerrainRulesetDef, TerrainTypeDef, TilesetDef, TransitionSetDef,
-    WorldManifestDef, WorldgenEditorWorkflowDef,
+    VoxelAssetRegistryDef, VoxelObjectSetDef, WorldManifestDef, WorldgenEditorWorkflowDef,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -34,12 +34,14 @@ pub struct ContentRegistry {
     pub protected_layer_policies: HashMap<String, ProtectedLayerPolicyDef>,
     pub generated_scene_drafts: HashMap<String, GeneratedSceneDraftDef>,
     pub scene_bake_contracts: HashMap<String, SceneBakeContractDef>,
+    pub voxel_asset_registries: HashMap<String, VoxelAssetRegistryDef>,
+    pub voxel_object_sets: HashMap<String, VoxelObjectSetDef>,
 }
 
 impl ContentRegistry {
     pub fn summary(&self) -> String {
         format!(
-            "items={} crops={} npcs={} schedules={} dialogues={} quests={} shops={} maps={} tilesets={} sprite_sheets={} map_layers={} terrain_types={} biome_packs={} transition_sets={} terrain_rulesets={} editor_atlas_pipelines={} editor_export_pipelines={} editor_animation_pipelines={} world_manifests={} worldgen_editor_workflows={} protected_layer_policies={} generated_scene_drafts={} scene_bake_contracts={}",
+            "items={} crops={} npcs={} schedules={} dialogues={} quests={} shops={} maps={} tilesets={} sprite_sheets={} map_layers={} terrain_types={} biome_packs={} transition_sets={} terrain_rulesets={} editor_atlas_pipelines={} editor_export_pipelines={} editor_animation_pipelines={} world_manifests={} worldgen_editor_workflows={} protected_layer_policies={} generated_scene_drafts={} scene_bake_contracts={} voxel_asset_registries={} voxel_object_sets={}",
             self.items.len(),
             self.crops.len(),
             self.npcs.len(),
@@ -63,6 +65,8 @@ impl ContentRegistry {
             self.protected_layer_policies.len(),
             self.generated_scene_drafts.len(),
             self.scene_bake_contracts.len(),
+            self.voxel_asset_registries.len(),
+            self.voxel_object_sets.len(),
         )
     }
 
@@ -91,6 +95,10 @@ impl ContentRegistry {
             || !self.protected_layer_policies.is_empty()
             || !self.generated_scene_drafts.is_empty()
             || !self.scene_bake_contracts.is_empty()
+    }
+
+    pub fn has_phase54a_voxel_contracts(&self) -> bool {
+        !self.voxel_asset_registries.is_empty() || !self.voxel_object_sets.is_empty()
     }
 
     pub fn active_world_manifest(&self) -> Option<&WorldManifestDef> {

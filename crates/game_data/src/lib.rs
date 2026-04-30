@@ -170,6 +170,33 @@ pub fn load_registry(project_root: impl AsRef<Path>) -> anyhow::Result<ContentRe
             .insert(def.id.clone(), def);
     }
 
+    let voxel_asset_registry_path = content_root
+        .join("voxel_assets")
+        .join("voxel_asset_registry.ron");
+    if voxel_asset_registry_path.exists() {
+        let def = load_voxel_asset_registry(&voxel_asset_registry_path)?;
+        registry
+            .voxel_asset_registries
+            .insert(def.phase.clone(), def);
+    }
+
+    let scenes_root = content_root.join("scenes");
+    if scenes_root.exists() {
+        for entry in std::fs::read_dir(&scenes_root)
+            .with_context(|| format!("failed to read scenes root {}", scenes_root.display()))?
+        {
+            let path = entry?.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let object_set_path = path.join("voxel_objects.ron");
+            if object_set_path.exists() {
+                let def = load_voxel_object_set(&object_set_path)?;
+                registry.voxel_object_sets.insert(def.id.clone(), def);
+            }
+        }
+    }
+
     let maps_root = content_root.join("maps");
     if maps_root.exists() {
         for entry in std::fs::read_dir(&maps_root)

@@ -1196,6 +1196,7 @@ impl VoxelMeshPipeline {
                         gl.enable(glow::BLEND);
                         gl.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
                         gl.use_program(Some(self.pick_program));
+<<<<<<< Updated upstream
                         if let Some(loc) =
                             gl.get_uniform_location(self.pick_program, "u_mvp")
                         {
@@ -1204,6 +1205,10 @@ impl VoxelMeshPipeline {
                                 false,
                                 &mvp.to_cols_array(),
                             );
+=======
+                        if let Some(loc) = gl.get_uniform_location(self.pick_program, "u_mvp") {
+                            gl.uniform_matrix_4_f32_slice(Some(&loc), false, &mvp.to_cols_array());
+>>>>>>> Stashed changes
                         }
                         if let Some(loc) =
                             gl.get_uniform_location(self.pick_program, "u_pick_color")

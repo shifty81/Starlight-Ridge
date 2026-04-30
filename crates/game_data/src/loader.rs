@@ -2,7 +2,8 @@ use crate::defs::{
     BiomePackDef, CropDef, DialogueDef, EditorAnimationPipelineDef, EditorAtlasPipelineCatalogDef,
     EditorExportValidationPipelineDef, GeneratedSceneDraftDef, ItemDef, MapLayersDef, NpcDef,
     ProtectedLayerPolicyDef, QuestDef, SceneBakeContractDef, ScheduleDef, ShopDef, SpriteSheetDef,
-    TerrainCatalogDef, TerrainRulesetDef, TilesetDef, TransitionSetDef, VoxelPanelKitDef,
+    TerrainCatalogDef, TerrainRulesetDef, TilesetDef, TransitionSetDef, VoxelAssetRegistryDef,
+    VoxelAssetRegistryFile, VoxelObjectSetDef, VoxelObjectSetFile, VoxelPanelKitDef,
     WorldManifestDef, WorldgenEditorWorkflowDef,
 };
 use anyhow::Context;
@@ -149,6 +150,14 @@ pub fn load_scene_bake_contract(path: &Path) -> anyhow::Result<SceneBakeContract
 }
 pub fn load_voxel_panel_kit(path: &Path) -> anyhow::Result<VoxelPanelKitDef> {
     load_ron_file(path)
+}
+
+pub fn load_voxel_asset_registry(path: &Path) -> anyhow::Result<VoxelAssetRegistryDef> {
+    Ok(load_ron_file::<VoxelAssetRegistryFile>(path)?.into())
+}
+
+pub fn load_voxel_object_set(path: &Path) -> anyhow::Result<VoxelObjectSetDef> {
+    Ok(load_ron_file::<VoxelObjectSetFile>(path)?.into())
 }
 
 pub fn save_map_layers_with_phase_backup(

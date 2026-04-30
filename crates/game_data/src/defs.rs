@@ -897,6 +897,309 @@ pub struct VoxelPanelSocketDef {
 }
 
 // -----------------------------------------------------------------------------
+// Phase 54a scene voxel object and voxel asset registry definitions
+// -----------------------------------------------------------------------------
+//
+// These contracts promote the voxel-first scene preview data out of the egui app
+// and into game_data. The file wrapper enums intentionally match the current RON
+// roots such as `VoxelAssetRegistry(...)` and `VoxelObjectSetDef(...)` while the
+// normalized `*Def` structs are what tools and validators should use internally.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum VoxelObjectSetFile {
+    VoxelObjectSetDef {
+        id: String,
+        scene_id: String,
+        objects: Vec<VoxelSceneObjectFile>,
+    },
+}
+
+impl From<VoxelObjectSetFile> for VoxelObjectSetDef {
+    fn from(file: VoxelObjectSetFile) -> Self {
+        match file {
+            VoxelObjectSetFile::VoxelObjectSetDef {
+                id,
+                scene_id,
+                objects,
+            } => Self {
+                id,
+                scene_id,
+                objects: objects.into_iter().map(Into::into).collect(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum VoxelSceneObjectFile {
+    VoxelSceneObjectDef {
+        id: String,
+        asset_id: String,
+        position: [f32; 3],
+        rotation_degrees: [f32; 3],
+        scale: f32,
+        layer: String,
+        tags: Vec<String>,
+        collision_enabled: bool,
+        interaction_id: Option<String>,
+    },
+}
+
+impl From<VoxelSceneObjectFile> for VoxelSceneObjectDef {
+    fn from(file: VoxelSceneObjectFile) -> Self {
+        match file {
+            VoxelSceneObjectFile::VoxelSceneObjectDef {
+                id,
+                asset_id,
+                position,
+                rotation_degrees,
+                scale,
+                layer,
+                tags,
+                collision_enabled,
+                interaction_id,
+            } => Self {
+                id,
+                asset_id,
+                position,
+                rotation_degrees,
+                scale,
+                layer,
+                tags,
+                collision_enabled,
+                interaction_id,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelObjectSetDef {
+    pub id: String,
+    pub scene_id: String,
+    pub objects: Vec<VoxelSceneObjectDef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelSceneObjectDef {
+    pub id: String,
+    pub asset_id: String,
+    pub position: [f32; 3],
+    pub rotation_degrees: [f32; 3],
+    pub scale: f32,
+    pub layer: String,
+    pub tags: Vec<String>,
+    pub collision_enabled: bool,
+    pub interaction_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum VoxelAssetRegistryFile {
+    VoxelAssetRegistry {
+        phase: String,
+        #[serde(default)]
+        default_density_profile: VoxelDensityProfile,
+        #[serde(default = "default_voxels_per_tile")]
+        default_voxels_per_tile: u32,
+        assets: Vec<VoxelAssetFile>,
+    },
+}
+
+impl From<VoxelAssetRegistryFile> for VoxelAssetRegistryDef {
+    fn from(file: VoxelAssetRegistryFile) -> Self {
+        match file {
+            VoxelAssetRegistryFile::VoxelAssetRegistry {
+                phase,
+                default_density_profile,
+                default_voxels_per_tile,
+                assets,
+            } => Self {
+                phase,
+                default_density_profile,
+                default_voxels_per_tile,
+                assets: assets.into_iter().map(Into::into).collect(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum VoxelAssetFile {
+    VoxelAssetDef {
+        id: String,
+        category: VoxelAssetCategory,
+        source_path: String,
+        display_name: String,
+        #[serde(default)]
+        tags: Vec<String>,
+        material_profile: String,
+        #[serde(default)]
+        density_profile: VoxelDensityProfile,
+        #[serde(default = "default_voxels_per_tile")]
+        voxels_per_tile: u32,
+        #[serde(default)]
+        max_voxel_budget: u32,
+        pivot: VoxelPivotFile,
+        #[serde(default = "default_one_f32")]
+        scale: f32,
+        collision: VoxelCollisionMode,
+        render_mode: VoxelRenderMode,
+        #[serde(default)]
+        bake_profile: Option<String>,
+        #[serde(default)]
+        source_refs: Vec<String>,
+    },
+}
+
+impl From<VoxelAssetFile> for VoxelAssetDef {
+    fn from(file: VoxelAssetFile) -> Self {
+        match file {
+            VoxelAssetFile::VoxelAssetDef {
+                id,
+                category,
+                source_path,
+                display_name,
+                tags,
+                material_profile,
+                density_profile,
+                voxels_per_tile,
+                max_voxel_budget,
+                pivot,
+                scale,
+                collision,
+                render_mode,
+                bake_profile,
+                source_refs,
+            } => Self {
+                id,
+                category,
+                source_path,
+                display_name,
+                tags,
+                material_profile,
+                density_profile,
+                voxels_per_tile,
+                max_voxel_budget,
+                pivot: pivot.into(),
+                scale,
+                collision,
+                render_mode,
+                bake_profile,
+                source_refs,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelAssetRegistryDef {
+    pub phase: String,
+    pub default_density_profile: VoxelDensityProfile,
+    pub default_voxels_per_tile: u32,
+    pub assets: Vec<VoxelAssetDef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelAssetDef {
+    pub id: String,
+    pub category: VoxelAssetCategory,
+    pub source_path: String,
+    pub display_name: String,
+    pub tags: Vec<String>,
+    pub material_profile: String,
+    pub density_profile: VoxelDensityProfile,
+    pub voxels_per_tile: u32,
+    pub max_voxel_budget: u32,
+    pub pivot: VoxelPivotDef,
+    pub scale: f32,
+    pub collision: VoxelCollisionMode,
+    pub render_mode: VoxelRenderMode,
+    pub bake_profile: Option<String>,
+    pub source_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum VoxelPivotFile {
+    PivotDef {
+        mode: VoxelPivotMode,
+        offset: [f32; 3],
+    },
+}
+
+impl From<VoxelPivotFile> for VoxelPivotDef {
+    fn from(file: VoxelPivotFile) -> Self {
+        match file {
+            VoxelPivotFile::PivotDef { mode, offset } => Self { mode, offset },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxelPivotDef {
+    pub mode: VoxelPivotMode,
+    pub offset: [f32; 3],
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum VoxelPivotMode {
+    FeetCenter,
+    GripPoint,
+    Center,
+    Origin,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum VoxelAssetCategory {
+    Character,
+    Tool,
+    Building,
+    Prop,
+    Terrain,
+    WorldItem,
+    Foliage,
+    Furniture,
+    Effect,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum VoxelDensityProfile {
+    LowDetail,
+    Standard,
+    HeroDetail,
+    UltraDetail,
+}
+
+impl Default for VoxelDensityProfile {
+    fn default() -> Self {
+        Self::HeroDetail
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum VoxelCollisionMode {
+    None,
+    Bounds,
+    CapsuleApprox,
+    MeshApprox,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum VoxelRenderMode {
+    RuntimeVoxel,
+    BakedSprite,
+    RuntimeVoxelOrBakedSprite,
+}
+
+fn default_voxels_per_tile() -> u32 {
+    64
+}
+
+fn default_one_f32() -> f32 {
+    1.0
+}
+
+// -----------------------------------------------------------------------------
 // Phase 51 world graph / scene-layer registry definitions
 // -----------------------------------------------------------------------------
 

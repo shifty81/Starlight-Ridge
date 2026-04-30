@@ -87,6 +87,101 @@ impl LaunchMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeEditorRoute {
+    Hub,
+    AssetStudio,
+    Character,
+    VoxelPanel,
+    World,
+    PixelAtlas,
+    AnimationRig,
+    AssetImport,
+    GameGui,
+    Data,
+}
+
+impl NativeEditorRoute {
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "hub" | "main_hub" | "editor" => Some(Self::Hub),
+            "asset" | "assets" | "asset_editor" | "asset_studio" => Some(Self::AssetStudio),
+            "character"
+            | "character_editor"
+            | "character_animation"
+            | "character_animation_editor" => Some(Self::Character),
+            "voxel_panel" | "voxel_panel_editor" => Some(Self::VoxelPanel),
+            "world" | "world_editor" => Some(Self::World),
+            "pixel_atlas" | "pixel_atlas_editor" | "pixel_editor" => Some(Self::AssetStudio),
+            "animation_rig" | "animation_rig_editor" => Some(Self::Character),
+            "asset_import" | "asset_import_editor" => Some(Self::AssetStudio),
+            "game_gui" | "game_gui_editor" | "gui_editor" | "ui_editor" => Some(Self::GameGui),
+            "data" | "data_editor" | "gameplay_data" | "gameplay_data_editor" => Some(Self::Data),
+            _ => None,
+        }
+    }
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Hub => "hub",
+            Self::AssetStudio => "asset_studio",
+            Self::Character => "character",
+            Self::VoxelPanel => "voxel_panel",
+            Self::World => "world",
+            Self::PixelAtlas => "pixel_atlas",
+            Self::AnimationRig => "animation_rig",
+            Self::AssetImport => "asset_import",
+            Self::GameGui => "game_gui",
+            Self::Data => "data",
+        }
+    }
+
+    pub fn window_title(self) -> &'static str {
+        match self {
+            Self::Hub => "Starlight Ridge Editor Hub",
+            Self::AssetStudio => "Starlight Ridge Asset Editor",
+            Self::Character => "Starlight Ridge Character / Animation Editor",
+            Self::VoxelPanel => "Starlight Ridge Voxel Panel Editor",
+            Self::World => "Starlight Ridge World Editor",
+            Self::PixelAtlas => "Starlight Ridge Pixel / Atlas Editor",
+            Self::AnimationRig => "Starlight Ridge Animation / Rig Editor",
+            Self::AssetImport => "Starlight Ridge Asset Import Editor",
+            Self::GameGui => "Starlight Ridge Game GUI Editor",
+            Self::Data => "Starlight Ridge Data Editor",
+        }
+    }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::Hub => "Editor Hub",
+            Self::AssetStudio => "Asset Editor",
+            Self::Character => "Character / Animation Editor",
+            Self::VoxelPanel => "Voxel Panel Editor",
+            Self::World => "World Editor",
+            Self::PixelAtlas => "Pixel / Atlas Editor",
+            Self::AnimationRig => "Animation / Rig Editor",
+            Self::AssetImport => "Asset Import Editor",
+            Self::GameGui => "Game GUI Editor",
+            Self::Data => "Data Editor",
+        }
+    }
+
+    pub fn binary_name(self) -> &'static str {
+        match self {
+            Self::Hub => "editor",
+            Self::AssetStudio => "asset_editor",
+            Self::Character => "character_animation_editor",
+            Self::VoxelPanel => "voxel_panel_editor",
+            Self::World => "world_editor",
+            Self::PixelAtlas => "pixel_atlas_editor",
+            Self::AnimationRig => "animation_rig_editor",
+            Self::AssetImport => "asset_import_editor",
+            Self::GameGui => "game_gui_editor",
+            Self::Data => "data_editor",
+        }
+    }
+}
+
 /// Initializes process-wide runtime logging for the game/editor binaries.
 pub fn init_runtime_logging(label: &str) {
     let mut builder =
@@ -266,7 +361,13 @@ pub fn run() -> anyhow::Result<()> {
 }
 
 pub fn run_editor() -> anyhow::Result<()> {
-    egui_editor::run_editor_egui()
+    egui_editor::run_editor_egui_for_route(NativeEditorRoute::Hub)
+}
+
+pub fn run_native_editor_app(route_id: &str) -> anyhow::Result<()> {
+    let route = NativeEditorRoute::from_id(route_id)
+        .with_context(|| format!("unknown native editor route '{route_id}'"))?;
+    egui_editor::run_editor_egui_for_route(route)
 }
 
 /// Keeps the pre-egui OpenGL overlay editor available for renderer debugging.

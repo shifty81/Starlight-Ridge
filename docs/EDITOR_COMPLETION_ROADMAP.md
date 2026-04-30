@@ -2,9 +2,15 @@
 
 This is the working roadmap for getting the Starlight Ridge editor from "usable shell with several real tools" to "fully production-ready content editor."
 
-The editor has two surfaces:
+The editor now has grouped native app surfaces plus the web companion:
 
-- Native egui editor: the main production editor.
+- Editor Hub: launcher, project status, validation, and diagnostics.
+- World Editor: map layers, world objects, terrain rules, and the 3D voxel scene viewport.
+- Asset Editor: terrain atlas, pixel editing, VOX browser, voxel generation, prop asset readiness, seasons, and import workflows.
+- Voxel Panel Editor: focused voxel panel kit/composition authoring baseline.
+- Character / Animation Editor: character assets, previews, animation clips, sockets, hitboxes, and rig prep in one app.
+- Game GUI Editor: game-facing HUD, menu, dialogue, screen, style-token, and runtime-binding contracts.
+- Data Editor: gameplay records for items, crops, NPCs, dialogue data, quests, shops, and schedules.
 - Web / LAN editor: lightweight map editing companion.
 
 The finish order below favors content safety first: real save paths, undo, validation, and predictable runtime/editor data contracts before heavier 3D preview work.
@@ -16,6 +22,12 @@ The finish order below favors content safety first: real save paths, undo, valid
 ### Solid / mostly wired
 
 - Native egui single-shell workspace with top tabs, side panels, bottom diagnostics, reload, and checkpoint manifest.
+- Native egui editor split into focused executable routes with a hub launcher and grouped standalone apps for World, Assets, Voxel Panels, Character / Animation, and Game GUI.
+- Focused editor routes use compact route-specific command strips and shell panel policies instead of inheriting every hub panel.
+- Editor Hub is now project-only; the old embedded workspace menu has been removed so the hub cannot silently become the crowded all-in-one shell again.
+- Native editor debug launchers now share `RUN_NATIVE_EDITOR_APP_DEBUG.bat`, build missing debug executables when needed, and avoid direct `cargo run` calls in each per-editor script.
+- Game GUI editor has an initial manifest contract at `content/game_gui/game_gui_editor_manifest.ron`.
+- Data Editor has a standalone native route, binary, debug launcher, hub launcher entry, and manifest entry.
 - Native map layer editing for `layers.ron`, including save with backup.
 - Native map layers support visible, locked, and opacity metadata with editor controls.
 - Native pixel editor for PNG-backed atlas editing, including brush, erase, fill, line, replace color, selection, clipboard, transforms, undo/redo, save with backup.
@@ -50,6 +62,12 @@ Current reality:
 - Native editor 3D preview is still egui-painted, but World -> 3D Preview now consumes the same combined `VoxelSceneRenderData` vertices/indices/bounds/object ranges that the game renderer draws, including editable map voxel placements plus scene voxel objects. Scene voxel selection now tries the shared render-contract projected-bounds picker first, then falls back to the painted preview bounds.
 - Voxel panel composition export exists: compositions can bake preview mesh/voxel data to RON for a future renderer to consume.
 - World voxel objects are editable and draggable in the 2D World viewport, represented as selectable 3D volumes in the editor 3D preview, and rendered through the runtime shared voxel mesh payload path. The 3D preview now has direct orbit, move, footprint resize, and height-adjust tools for selected voxel placements, with dirty-state tracking until the shared mesh payload is saved/reloaded.
+<<<<<<< Updated upstream
+=======
+- Asset Editor Props now shows prop-kind usage/readiness across map `props.ron` files instead of embedding the World Objects placement editor.
+- Character / Animation Editor uses a slimmer focused shell with the right inspector hidden until the character tools have real selection-aware inspector data.
+- Voxel rig/profile and character template RON files have been normalized away from bracketed fixed-size vectors that were likely to produce the next runtime parse failure.
+>>>>>>> Stashed changes
 
 Estimated implementation progress:
 
@@ -87,6 +105,13 @@ Shortest viable path to real 3D:
 
 Goal: make the editor shell intuitive before adding more feature surface.
 
+- [x] Split the crowded all-in-one shell into focused native app routes launched from the hub.
+- [x] Lock the hub to project overview, editor launchers, validation, diagnostics, build, and export instead of exposing embedded legacy workspaces.
+- [x] Group Character and Animation into one Character / Animation Editor app.
+- [x] Group atlas, pixel, VOX, generator, props, seasons, and import surfaces into one Asset Editor app.
+- [x] Add a dedicated Game GUI Editor route and first manifest contract.
+- [x] Add a dedicated Data Editor route for gameplay records.
+- [x] Keep Voxel Panel Editor as the baseline focused rail/canvas app pattern.
 - [x] Replace the always-visible global tool row with workspace-local toolbars.
 - [x] Add one context-aware command strip for Save, Save All Dirty, Reload, Undo, Redo, and Validate.
 - [x] Remove the most duplicated save/reload/undo controls from map, pixel, placement, and voxel child panels once the command strip owns them.

@@ -24,26 +24,32 @@ The core rework should make the editor feel like this:
 
 ### Parent Workspaces
 
-Current top-level workspaces are Project, World, Assets, Animation, Character, Logic, Data, Playtest, and Settings.
+Current direction is no longer one always-visible top-level workspace strip. The hub launches focused native apps:
+
+- Editor Hub
+- World Editor
+- Asset Editor
+- Voxel Panel Editor
+- Character / Animation Editor
+- Game GUI Editor
+- Data Editor
+- Web / LAN companion
 
 Problems:
 
-- Too many parent tabs are always visible.
+- Too many parent tabs were always visible in the old shell.
 - Some parents are real workspaces, while others are scaffold pages.
 - Top bar wraps into multiple rows and competes with the active workspace.
 
 Recommended structure:
 
-- Project: overview, validation, diagnostics, export.
-- World: map paint, layers, objects, collision, terrain bake.
-- Assets: atlas, pixel editor, voxel panels, VOX browser, seasons.
-- Gameplay Data: items, crops, NPCs, dialogue, quests, shops, schedules.
-- Animation: clips, timeline, events, sockets, hitboxes.
-- Logic: graphs, event bindings, validation.
-- Playtest: launch, runtime state, logs.
-- Settings: preferences, keybinds, paths, web companion.
-
-Move Character under Animation or Assets until it has real tools. It currently reads like another placeholder parent.
+- Hub: project overview, editor launchers, validation, diagnostics, build, and export only.
+- World Editor: map paint, layers, objects, collision, terrain bake, 3D preview.
+- Asset Editor: atlas, pixel editor, VOX browser, generator, prop asset readiness, seasons, imports.
+- Voxel Panel Editor: panel kits, sockets, compositions, 3D preview, diagnostics.
+- Character / Animation Editor: bases, outfits, preview, clips, timeline, events, sockets, hitboxes.
+- Game GUI Editor: screens, HUD, dialogue UI, menus, style tokens, runtime bindings, GUI validation.
+- Data Editor: items, crops, NPCs, dialogue data, quests, shops, schedules.
 
 ### Child Navigation
 
@@ -342,6 +348,8 @@ Initial cleanup now completed:
 - The right inspector now follows voxel panel designer selection with kit, mode, panel, material, socket, composition, instance, export, and dirty-state readouts.
 - The most duplicated save/reload/undo controls were removed from child panels that should defer to the command strip.
 - Props, spawns, triggers, and voxel objects were merged into a World Objects panel with type filters and shared duplicate/remove actions.
+- Asset Editor Props no longer reuses the World Objects placement editor; it now shows asset-facing prop-kind usage/readiness, while placement editing stays in World Editor.
+- Character / Animation Editor no longer opens the global right inspector by default; its current stub surfaces are kept in the main workspace until selection-aware character tools are real.
 - World Map Paint select mode now supports click selection and grid-snapped drag movement for props, spawns, triggers, and voxel objects.
 - World Map Paint select mode now supports marquee selection for world placements and bottom-right resize handles for trigger and voxel object footprints.
 - Map layers now have lock and opacity metadata with editor controls; locked layers block paint/fill/erase and opacity affects preview rendering.
@@ -350,6 +358,13 @@ Initial cleanup now completed:
 - Locked layers now emit validation warnings and the selected-layer inspector explains which edit modes are blocked while the layer is locked.
 - Validation rows can now focus named layers, props, spawns, triggers, voxel objects, and scene voxel objects directly from the issue list.
 - `editor_data_bridge` now centralizes map content paths, generic RON backup/temp-write saves, dirty-state models, and several native editor save routes.
+<<<<<<< Updated upstream
+=======
+- Remaining fixed-size vector RON syntax in voxel rig/profile content was normalized to tuple style to match the parse format used by the runtime/editor loaders.
+- Per-editor debug launchers now share a common executable-first wrapper instead of duplicating `cargo run` command blocks in every standalone editor script.
+- The hub no longer exposes the old Embedded Workspace menu, so users are guided into focused standalone editors instead of accidentally re-entering the crowded all-in-one shell.
+- Data now has its own standalone editor route and launcher instead of remaining hidden as an embedded legacy workspace.
+>>>>>>> Stashed changes
 
 Remaining near-term sequence:
 

@@ -1,0 +1,19 @@
+Starlight_Ridge_phase53q_voxel_composition_3d_connection_graph_inspector.zip
+
+Apply after:
+- Starlight_Ridge_phase53l_voxel_composition_3d_selection_transform_handles.zip
+- Starlight_Ridge_phase53m_patch_overlay_voxel_composition_3d_connection_editing_snap_preview.zip
+- Starlight_Ridge_phase53m_1_compile_fix_duplicate_instance_borrow.zip
+- Starlight_Ridge_phase53n_voxel_composition_3d_rotation_mirror_constraints.zip
+- Starlight_Ridge_phase53o_voxel_composition_history_save_polish.zip
+- Starlight_Ridge_phase53p_voxel_composition_3d_multi_select_group_tools.zip
+- Starlight_Ridge_phase53p_1_voxel_composition_3d_marquee_select_group_mode.zip
+
+Changed files:
+- crates/app/src/egui_editor.rs
+- docs/PHASE53Q_VOXEL_COMPOSITION_3D_CONNECTION_GRAPH_INSPECTOR.md
+
+Scope:
+- Editor-only Voxel Panels 3D Preview connection graph inspector.
+- No gameplay changes.
+- Single-root egui shell guard preserved.
