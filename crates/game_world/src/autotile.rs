@@ -125,18 +125,19 @@ impl AutotileResolver {
                         continue;
                     }
 
-                    let tile_id = transition_tile_for_mask(rule, mask);
-                    tiles.push(ResolvedTerrainTile {
-                        x,
-                        y,
-                        render_layer: rule.render_layer.max(1),
-                        tile_id,
-                        source_terrain_id: rule.from.clone(),
-                        target_terrain_id: Some(rule.to.clone()),
-                        mask,
-                        collision_blocked: false,
-                        kind: ResolvedTileKind::Transition,
-                    });
+                    for tile_id in transition_tiles_for_mask(rule, mask) {
+                        tiles.push(ResolvedTerrainTile {
+                            x,
+                            y,
+                            render_layer: rule.render_layer.max(1),
+                            tile_id,
+                            source_terrain_id: rule.from.clone(),
+                            target_terrain_id: Some(rule.to.clone()),
+                            mask,
+                            collision_blocked: false,
+                            kind: ResolvedTileKind::Transition,
+                        });
+                    }
                 }
             }
         }
@@ -186,21 +187,108 @@ fn select_base_tile_id(
     set.fallback_tile_id.clone()
 }
 
-fn transition_tile_for_mask(rule: &TerrainTransitionRule, mask: u32) -> String {
+fn transition_tiles_for_mask(rule: &TerrainTransitionRule, mask: u32) -> Vec<String> {
     if let Some(tile_id) = rule.tiles_by_mask.get(&mask) {
-        return tile_id.clone();
+        return vec![tile_id.clone()];
     }
 
-    // Many early placeholder sheets only provide cardinal pieces. If a corner or
-    // multi-direction mask does not exist yet, select a stable cardinal piece
-    // from the mask before falling back to the rule's safest base tile.
+    // Many current transition sets only define cardinal edge overlays. When a
+    // combined mask tile does not exist, emit one cardinal overlay per bit.
+    let mut tiles = Vec::new();
     for bit in [1, 2, 4, 8] {
         if mask & bit != 0 {
             if let Some(tile_id) = rule.tiles_by_mask.get(&bit) {
-                return tile_id.clone();
+                tiles.push(tile_id.clone());
             }
         }
     }
 
-    rule.fallback_tile_id.clone()
+    if tiles.is_empty() {
+        tiles.push(rule.fallback_tile_id.clone());
+    }
+
+    tiles
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{SemanticTerrainCell, SemanticTerrainGrid};
+
+    fn make_grid(rows: &[&[&str]]) -> SemanticTerrainGrid {
+        let height = rows.len() as u32;
+        let width = rows.first().map(|row| row.len()).unwrap_or(0) as u32;
+        let cells = rows
+            .iter()
+            .flat_map(|row| row.iter().map(|terrain| SemanticTerrainCell::new(*terrain)))
+            .collect::<Vec<_>>();
+        SemanticTerrainGrid::new("test_scene", width, height, cells).expect("valid test grid")
+    }
+
+    #[test]
+    fn combined_mask_without_exact_tile_emits_cardinal_overlays() {
+        let grid = make_grid(&[
+            &["grass", "path", "grass"],
+            &["grass", "grass", "path"],
+            &["grass", "grass", "grass"],
+        ]);
+        let mut tiles_by_mask = HashMap::new();
+        tiles_by_mask.insert(1, "edge_n".to_string());
+        tiles_by_mask.insert(2, "edge_e".to_string());
+        tiles_by_mask.insert(4, "edge_s".to_string());
+        tiles_by_mask.insert(8, "edge_w".to_string());
+        let catalog = TerrainResolveCatalog {
+            transition_rules: vec![TerrainTransitionRule {
+                id: "grass_to_path".to_string(),
+                from: "grass".to_string(),
+                to: "path".to_string(),
+                render_layer: 2,
+                fallback_tile_id: "fallback".to_string(),
+                tiles_by_mask,
+            }],
+            ..TerrainResolveCatalog::default()
+        };
+
+        let resolved = AutotileResolver::resolve(&grid, &catalog);
+        let center_tiles = resolved
+            .tiles
+            .iter()
+            .filter(|tile| tile.kind == ResolvedTileKind::Transition && tile.x == 1 && tile.y == 1)
+            .map(|tile| tile.tile_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(center_tiles, vec!["edge_n", "edge_e"]);
+    }
+
+    #[test]
+    fn exact_mask_tile_is_preferred_over_cardinal_expansion() {
+        let grid = make_grid(&[
+            &["grass", "path", "grass"],
+            &["grass", "grass", "path"],
+            &["grass", "grass", "grass"],
+        ]);
+        let mut tiles_by_mask = HashMap::new();
+        tiles_by_mask.insert(1, "edge_n".to_string());
+        tiles_by_mask.insert(2, "edge_e".to_string());
+        tiles_by_mask.insert(3, "corner_ne".to_string());
+        let catalog = TerrainResolveCatalog {
+            transition_rules: vec![TerrainTransitionRule {
+                id: "grass_to_path".to_string(),
+                from: "grass".to_string(),
+                to: "path".to_string(),
+                render_layer: 2,
+                fallback_tile_id: "fallback".to_string(),
+                tiles_by_mask,
+            }],
+            ..TerrainResolveCatalog::default()
+        };
+
+        let resolved = AutotileResolver::resolve(&grid, &catalog);
+        let center_tiles = resolved
+            .tiles
+            .iter()
+            .filter(|tile| tile.kind == ResolvedTileKind::Transition && tile.x == 1 && tile.y == 1)
+            .map(|tile| tile.tile_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(center_tiles, vec!["corner_ne"]);
+    }
 }
