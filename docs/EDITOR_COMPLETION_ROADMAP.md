@@ -62,12 +62,9 @@ Current reality:
 - Native editor 3D preview is still egui-painted, but World -> 3D Preview now consumes the same combined `VoxelSceneRenderData` vertices/indices/bounds/object ranges that the game renderer draws, including editable map voxel placements plus scene voxel objects. Scene voxel selection now tries the shared render-contract projected-bounds picker first, then falls back to the painted preview bounds.
 - Voxel panel composition export exists: compositions can bake preview mesh/voxel data to RON for a future renderer to consume.
 - World voxel objects are editable and draggable in the 2D World viewport, represented as selectable 3D volumes in the editor 3D preview, and rendered through the runtime shared voxel mesh payload path. The 3D preview now has direct orbit, move, footprint resize, and height-adjust tools for selected voxel placements, with dirty-state tracking until the shared mesh payload is saved/reloaded.
-<<<<<<< Updated upstream
-=======
 - Asset Editor Props now shows prop-kind usage/readiness across map `props.ron` files instead of embedding the World Objects placement editor.
 - Character / Animation Editor uses a slimmer focused shell with the right inspector hidden until the character tools have real selection-aware inspector data.
 - Voxel rig/profile and character template RON files have been normalized away from bracketed fixed-size vectors that were likely to produce the next runtime parse failure.
->>>>>>> Stashed changes
 
 Estimated implementation progress:
 

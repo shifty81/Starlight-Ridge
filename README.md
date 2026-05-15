@@ -1,107 +1,59 @@
-# Starlight Forge Phase-1 Bootstrap
+# Starlight Ridge
 
-Rust top-down adventure life-sim starter workspace with a built-in editor architecture.
+Rust farm/life-sim project with a custom renderer and a native/web editor stack for world and content authoring.
 
-## What this phase does
+## Current Direction
 
-This bootstrap is no longer a pure stub pack. It now provides:
+- World/editor workflow is the active delivery focus.
+- Tile/sprite authoring paths are prioritized for production content.
+- Gameplay milestones remain tracked in the canonical roadmap, with editor reliability and content tooling treated as immediate enablers.
 
-- a compileable Cargo workspace
-- a minimal `winit` windowed app loop
-- frame timing and redraw flow
-- a renderer bootstrap placeholder where the OpenGL context should be wired next
-- a real `game_data` loader for the sample `.ron` content
-- content validation for basic cross-references
+## Project Status (May 2026)
 
-## Current phase boundary
+### Done
+- Custom GL runtime foundation (windowing, tile/sprite render paths, content loading/validation)
+- Native egui editor shell with focused editor routes
+- Web/LAN editor companion for map-layer workflows
+- RON-based content pipeline across maps, tiles, gameplay data, and world contracts
 
-Included now:
-- project root discovery
-- content loading from `content/`
-- sample registry validation
-- a live app window
-- redraw loop
-- Escape and close-to-exit handling
+### In Progress
+- Editor hardening (shared undo/data-bridge adoption, consistency, validation depth)
+- Runtime/editor parity for voxel and world-object workflows
+- Gameplay loop wiring (player, UI, farming/combat/economy systems)
 
-Still intentionally deferred to the next milestone:
-- real OpenGL context creation
-- sprite/tile rendering
-- camera and player movement
-- gameplay simulation
-- editor overlay UI
+### Next
+- Continue editor completion milestones and world-authoring reliability
+- Land playable-first runtime milestones (player on screen, interaction, minimal UI)
+- Tighten test and release gates for daily use
 
-## Build
+## Quick Start
 
 ```bash
-cargo check
-cargo run -p app
+# baseline validation
+cargo check -p app
+
+# run game runtime
+cargo run -p app --bin app
+
+# run native editor hub
+cargo run -p app --bin editor
+
+# run web/LAN editor (read-only by default)
+cargo run -p web_editor_server
 ```
 
-## Expected result
+Convenience menu/build helpers are available via:
+- `./build.sh` (Linux/macOS shell)
+- `build.bat` and `tools/build_menu.ps1` (Windows)
 
-On launch, the app should:
-1. load the sample RON files
-2. validate the loaded registry
-3. open a window titled `Starlight Forge - Phase 1 Bootstrap`
-4. enter a redraw loop until the window is closed or Escape is pressed
+## Roadmap Hub
 
-## Recommended next implementation order
+- Canonical product roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md)
+- Canonical editor implementation roadmap: [`docs/EDITOR_COMPLETION_ROADMAP.md`](docs/EDITOR_COMPLETION_ROADMAP.md)
+- Current phase/spec baseline: [`docs/PHASE53_PIXEL_VOXEL_FIRST_MASTER_SPEC.md`](docs/PHASE53_PIXEL_VOXEL_FIRST_MASTER_SPEC.md)
+- Editor usage guide: [`docs/EDITOR_GUIDE.md`](docs/EDITOR_GUIDE.md)
 
-1. wire an actual OpenGL context into `engine_render_gl`
-2. add a simple clear pass and viewport handling
-3. load one tileset texture
-4. draw the `town` map metadata as the first rendered scene root
-5. add a camera and player bootstrap entity
-6. route input into gameplay movement
-7. add the first editor toggle state
+## Notes
 
-
-## Phase 5 Starter Art Assets
-
-This scaffold now includes generated prototype art assets for the tilemap + sprite pass:
-
-- `assets/textures/terrain_atlas_phase5.png`
-- `assets/textures/entity_sprite_sheet_phase5.png`
-- `content/tiles/base_tileset.ron`
-- `content/metadata/entity_sprite_sheet_phase5.ron`
-
-Suggested next implementation step:
-- load the tileset atlas and sprite sheet in `engine_assets`
-- add atlas-region lookup from the RON metadata
-- render world tiles from a tile layer instead of generated debug colors
-- render a first player sprite / marker on top of the map
-
-
-## Phase 6 In-Game Tilemap + Sprite Integration
-
-This pass wires the generated starter art into the runtime path.
-
-### Added / updated
-- `content/maps/town/layers.ron`
-- `content/tiles/base_tileset.ron`
-- `content/metadata/entity_sprite_sheet_phase5.ron`
-- `crates/game_data/*` tile/sprite metadata loading
-- `crates/engine_render_gl/src/lib.rs` texture atlas + sprite sheet rendering
-- `crates/app/src/lib.rs` camera movement and phase-6 boot flow
-
-### Expected result
-Running `cargo run -p app` should now:
-- open a GL window
-- load the generated terrain atlas and entity sprite sheet
-- render the `town` tile layer from `layers.ron`
-- render player/NPC markers and prop sprites on top
-- allow camera pan with `WASD` / arrow keys
-
-### Note
-This is still a prototype render path and was prepared without being compiled in this container.
-
-## Phase 21 Web Editor LAN Bridge
-
-A first LAN-accessible web editor surface is available for tablet testing.
-
-- Read-only tablet mode: `RUN_WEB_EDITOR_LAN.bat`
-- Tablet mode with `layers.ron` saving enabled: `RUN_WEB_EDITOR_LAN_WRITE.bat`
-- Bash menu commands: `./build.sh web-editor` or `./build.sh web-editor-write`
-- Windows menu options are also available through `build.bat` / `tools/build_menu.ps1`.
-
-The server prints a local network URL such as `http://192.168.1.25:8787/`. Open that URL from a tablet on the same network. See `docs/editor/web_editor_lan_phase21.md` for details and firewall notes.
+- Historical phase notes and legacy rollups are kept under `docs/archive/`.
+- If a historical patch note conflicts with the roadmap, treat the roadmap docs above as the active source of truth.
