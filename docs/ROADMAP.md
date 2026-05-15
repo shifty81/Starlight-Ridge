@@ -1,14 +1,15 @@
 # Roadmap
 
-This document is the single canonical roadmap for Starlight Ridge. It supersedes the phase-by-phase chat rollup notes in `docs/archive/`.
+This document is the single canonical roadmap for Starlight Ridge. It supersedes phase-by-phase chat rollups and historical patch notes in `docs/archive/`.
 
 The guiding principle is **playable first**: get a real game loop running before adding worldgen, voxels, or simulation layers.
+Current execution emphasis is **editor/world authoring reliability first** so the playable-first milestones can be built on stable tools.
 
 For the detailed editor-only completion checklist, see [EDITOR_COMPLETION_ROADMAP.md](EDITOR_COMPLETION_ROADMAP.md).
 
 ---
 
-## Current State (as of April 2026)
+## Current State (as of May 2026)
 
 ✅ **Done**
 - Custom GL engine (window, tilemap renderer, sprite pipeline)
@@ -149,6 +150,7 @@ Goal: a shareable build covering town + farm + forest/cave, one crop, one NPC, o
 ## Future: Worldgen + Simulation (Phase 52+)
 
 These phases are planned but deliberately deferred until the vertical slice is playable.
+If old phase docs conflict with this roadmap ordering, follow this document.
 
 ### Phase 52a — Core Contracts *(schemas done, loading/validation pending)*
 - RON loading for biome, material, liquid, weather, season, vox contracts
